@@ -1,0 +1,29 @@
+digraph server {
+node [shape=diamond]; n4;
+node [shape=diamond]; n6;
+node [shape=doublecircle]; "Pay out"
+node [shape=ellipse];
+
+n1 [label="Waiting to \nstart game \n-- no players"]
+n2 [label="Waiting up \nto <timeout> \nto start game"]
+n3 [label="Send ANTE \nmessage wait up \nto <timeout> \nfor antes"]
+n4 [label="Dealer has \nace showing"]
+n5 [label="For each player \nwait up to <timeout> \nfor insurance purchases."]
+n6 [label="Player i \nhas blackjack"]
+n7 [label="wait up \nto <timeout> \nfor i's action, \nsend STAT"]
+
+n1 -> n2 [ label = " JOIN" ];
+n2 -> n2 [ label = " JOIN/\n EXIT" ];
+n2 -> n3;
+n3 -> n4 [label=" timeout expires;\n send DEAL"];
+n4 -> n5 [label=" Yes"];
+n5 -> n5 [label=" INSU msg \n from client, \n i++"];
+n4 -> n6 [label=" No"];
+n5 -> n6;
+n6 -> n6 [label=" Yes, i++"];
+n6 -> n7 [label=" No"];
+n7 -> n7 [label=" If none of bust, stay,\n double-down"];
+n7 -> n6 [label=" Bust, stay or \n doubledown; i++"];
+n7 -> "Pay out" [label=" End of game"];
+"Pay out" -> n1 [label = " Start over"];
+}

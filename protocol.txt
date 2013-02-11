@@ -1,0 +1,116 @@
+-------------------------------------------------------------------------
+Blackjack Rules
+-------------------------------------------------------------------------
+
+-2 decks
+-6 seats at a table not including dealer
+
+-Players have all of their cards face up, dealer has all cards face up except the first card they are dealt.
+
+-Dealer hits soft 17 (has an ace showing) otherwise dealer hits on 16 and below.
+
+-If dealer's first face up card is an ace any player can buy insurance up to half of their bet. If a dealer gets a blackjack you get back twice your insurance.
+
+-A player can split if they are dealt two cards of the same value. In this case their first hand will be resolved (to a hold or bust) then the second hand will be resolved.
+
+-A player can double-down on their first move. A double-down include doubling their bet and dealing them one card. They cannot hit again, they must hold.
+
+-Dealer (server) may shuffle after any hand.
+
+-A tie results in a push (bet is returned to player).
+
+-If a player gets a blackjack (and beat the dealer) they win 1.5x their initial bet in addition to their initial bet
+
+-If a player beats dealer they win 1x bet plus their initial bet
+
+-If a player leaves a game or is booted, the server keeps their bet. (That way, clients cannot disconnect to avoid a bad hand)
+
+-settle all bets after dealer reveals their card.
+
+-a player with blackjack wins unless then dealer has blackjack (which results in a push)
+
+
+-------------------------------------------------------------------------
+Messages
+-------------------------------------------------------------------------
+
+Cards: specified by a string that is two characters long in the order value, suit.
+-value is one of the following [1,2,3,4,5,6,7,8,9,T,J,Q,K]
+-suit is on of the following [H,S,C,D]
+
+Cash: ten digits, ascii representation padded with zeros on the left
+
+ID: 12 characters (truncated if more), right padded with spaces, must be a valid c variable
+
+Player info: ID,Cash,card1,card2
+
+Action: a player's action, or error condition.
+-one of [HITT, DOWN (double down), SPLT (split), STAY, TIME (player timed out, booted from game), STRK (player struck out, booted from game), EXIT (player sent an EXIT message and is removed from the game)]
+
+Text: a string containing anything but pipes (|), and square brackets ([])
+
+Message format:
+
+[COMMAND|item1|item2|item3|...|itemN]
+-COMMAND field is four letters all uppercase
+-length and number of other fields(items) depends on message
+
+example: [JOIN|player1]
+
+
+
+-------------------------------------------------------------------------
+Client to Server:
+-------------------------------------------------------------------------
+
+[JOIN|id]
+
+[ANTE|amount] (a reply to ANTE from server, which specifies the min bet)
+-amount is cash value, at least min bet, less than or equal to your cash on hand
+
+[TURN|action] (a reply to TURN from server)
+
+[INSU|amount] (required response if dealer's card is an ace)
+-amount is cash value, no more than half your bet (rounded down)
+
+[EXIT]
+
+[CHAT|text]
+
+-------------------------------------------------------------------------
+Server to Client:
+-------------------------------------------------------------------------
+
+[CHAT|id|text] (a response to a CHAT from client)
+
+[CONN|timeout|location|cash] (a response to JOIN, or sent to continuing clients after an ENDG)
+-CONN is a response to JOIN
+-timeout in seconds is how long the server will wait for a response.
+-location is either TABL or LBBY
+-current cash field contains the current cash for the client that sent the JOIN (1000 if they are new to this server)
+
+[ANTE|minbet] (sent to clients at the TABL after the timeout expires and the game starts)
+
+[DEAL|dealer card|shuf|seat 1 player info| seat 2 player info| ... |seat 6 player info]
+-shift field will contain SHUFY if deck was shuffled, SHUFN if it was not
+-If a seat is empty then instead of player info in that section it will be empty
+-'player info' as defined above.
+
+[ERRR|strike number|optional message] (sent as a response to invalid message from client; not broadcast)
+
+[TURN|id]
+
+[STAT|id|action|card|bust|bet]
+-bust is BUSTY or BUSTN
+-bet is how much money they have on the table.
+
+[ENDG|id,result,cash|id,result,cash|...|id,result,cash]
+-id is player id
+-result is one of [WON,LOS,TIE] (Tie is either a split where one hand won, or a push)
+-cash is their resulting cash amount
+
+
+-------------------------------------------------------------------------
+Notes:
+-------------------------------------------------------------------------
+Both client and server must ignore any newline characters. That way, we can use telnet to test one half at a time.
