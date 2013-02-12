@@ -11,7 +11,7 @@ m_handlers = {}
 
 def handle_chat(id_, text):
     print('{id_}> {text}'.format(
-            id_=id_,
+            id_=id_.rstrip(),
             text=text))
 
 def handle_conn(timeout,location,cash):
@@ -24,8 +24,8 @@ m_handlers['CHAT'] = handle_chat
 server = s.socket(s.AF_INET, s.SOCK_STREAM)
 server.connect((host,port))
 
-name = raw_input('What is your name?')
-name = name.strip('[]|, ')
+name = raw_input('What is your name? ')
+name = name.strip('[]|, \n')
 name = name if len(name) < 12 else name[:12]
 server.sendall('[JOIN|{_id:<12}]'.format(_id=name))
 s_buffer=MessageBuffer(server)
@@ -36,7 +36,7 @@ while True:
         if stream == server:
             s_buffer.update()
         else:#line from stdin
-            chat_line = sys.stdin.readline()
+            chat_line = sys.stdin.readline().strip('\r\n')
             server.sendall('[CHAT|{text}]'.format(
                 text=chat_line.strip('[]|')))
     while s_buffer.messages:

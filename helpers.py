@@ -14,7 +14,10 @@ class MessageBuffer(object):
         self.sock = sock
 
     def update(self):
-        self._buffer += filter(lambda x: x != '\n', self.sock.recv(1024))
+        new_data = self.sock.recv(READSIZE).strip('\n\r')
+        if not new_data:
+            raise Exception('here in MessageBuffer, we believe the socket is closed')
+        self._buffer += new_data
         new_messages = re.findall(MESS_RE, self._buffer)
         for message in new_messages:
             mess_args = message.strip('[]').split('|')
@@ -25,3 +28,4 @@ class MessageBuffer(object):
                 re.sub(MESS_RE, '', self._buffer)))
         if len(self._buffer) > MAX_LEN:
             self._buffer = '' #ignore messages longer than MAX_LEN
+
