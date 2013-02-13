@@ -14,6 +14,9 @@ class Client(object):
         self.strikes = 0
         self.id_ = ''
 
+    def __del__(self):
+        del self.mbuffer
+
 
 class BlackjackServer(object):
     def __init__(self):
@@ -26,6 +29,7 @@ class BlackjackServer(object):
         
         self.m_handlers['join'] = self.handle_join
         self.m_handlers['chat'] = self.handle_chat
+        self.m_handlers['exit'] = self.drop_client
 
         self.server = s.socket(s.AF_INET, s.SOCK_STREAM)
         self.server.bind((self.host,self.port))
@@ -39,7 +43,7 @@ class BlackjackServer(object):
         try:
             sock.sendall('[conn|{timeout}|{location}|{cash:0>10}]'.format(
                 timeout=self.timeout,
-                location='LBBY',
+                location='lbby',
                 cash=1000))
             self.clients[sock].id_ = id_
         except Exception as e:
@@ -50,7 +54,8 @@ class BlackjackServer(object):
 
     def handle_chat(self, sock, text):
         if self.clients[sock]: #clients must tell us their name before they can chat
-            for client in self.clients:
+            clients = self.clients.keys() #we mustn't change self.clients during iteration!
+            for client in clients:
                 try:
                     client.sendall('[chat|{id_}|{text}]'.format(
                         id_=self.clients[sock].id_,
@@ -71,9 +76,11 @@ class BlackjackServer(object):
                 self.drop_client(sock)
 
     def drop_client(self, sock):
-        print('dropping {}, id: {}'.format(sock, self.clients[sock].id_))
-        self.watched_socks.remove(sock)
-        del self.clients[sock]
+        if sock in self.clients:
+            print('dropping {}, id: {}'.format(sock, self.clients[sock].id_))
+            del self.clients[sock]
+        if sock in self.watched_socks:
+            self.watched_socks.remove(sock)
 
     def sighandler(self, signum, frame):
         print('Shutting down server...')

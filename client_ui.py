@@ -1,4 +1,5 @@
 import sys
+     
 class ConsoleUI(object):
 
     def __init__(self, send_chat_msg):
