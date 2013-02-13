@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import socket as s
 from helpers import MessageBuffer
+from client_ui import ConsoleUI
 from select import select
 import sys
 
@@ -18,27 +19,35 @@ def handle_conn(timeout,location,cash):
     print('Connection established!')
     print('{} {} {}'.format(timeout,location,cash))
 
-m_handlers['CONN'] = handle_conn
-m_handlers['CHAT'] = handle_chat
+m_handlers['conn'] = handle_conn
+m_handlers['chat'] = handle_chat
+
+def send_chat(chat_line):
+    '''callback function for gui'''
+    server.sendall('[chat|{text}]'.format(
+        text=chat_line.strip('[]|')))
+
+ui = ConsoleUI(send_chat)
 
 server = s.socket(s.AF_INET, s.SOCK_STREAM)
 server.connect((host,port))
 
-name = raw_input('What is your name? ')
-name = name.strip('[]|, \n')
-name = name if len(name) < 12 else name[:12]
-server.sendall('[JOIN|{_id:<12}]'.format(_id=name))
+name = ui.get_player_name()
+
+server.sendall('[join|{_id:<12}]'.format(_id=name))
 s_buffer=MessageBuffer(server)
 
+watched_socks = [server]
+if ui.chat_at_stdin:
+    watched_socks.append(sys.stdin)
+
 while True:
-    input_socks, _, _ = select([server, sys.stdin],[],[])
+    input_socks, _, _ = select(watched_socks,[],[])
     for stream in input_socks:
         if stream == server:
             s_buffer.update()
-        else:#line from stdin
-            chat_line = sys.stdin.readline().strip('\r\n')
-            server.sendall('[CHAT|{text}]'.format(
-                text=chat_line.strip('[]|')))
+        else: #line from stdin indicates a chat message
+            ui.send_chat()
     while s_buffer.messages:
         m_type, mess_args = s_buffer.messages.popleft()
         m_handlers[m_type](*mess_args)

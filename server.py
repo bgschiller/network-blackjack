@@ -24,8 +24,8 @@ class BlackjackServer(object):
         self.m_handlers = {} #CMND:func(client, *args) pairs
         self.clients = {} #sock:Client pairs
         
-        self.m_handlers['JOIN'] = self.handle_join
-        self.m_handlers['CHAT'] = self.handle_chat
+        self.m_handlers['join'] = self.handle_join
+        self.m_handlers['chat'] = self.handle_chat
 
         self.server = s.socket(s.AF_INET, s.SOCK_STREAM)
         self.server.bind((self.host,self.port))
@@ -37,7 +37,7 @@ class BlackjackServer(object):
 
     def handle_join(self, sock, id_):
         try:
-            sock.sendall('[CONN|{timeout}|{location}|{cash:0>10}]'.format(
+            sock.sendall('[conn|{timeout}|{location}|{cash:0>10}]'.format(
                 timeout=self.timeout,
                 location='LBBY',
                 cash=1000))
@@ -52,7 +52,7 @@ class BlackjackServer(object):
         if self.clients[sock]: #clients must tell us their name before they can chat
             for client in self.clients:
                 try:
-                    client.sendall('[CHAT|{id_}|{text}]'.format(
+                    client.sendall('[chat|{id_}|{text}]'.format(
                         id_=self.clients[sock].id_,
                         text=text))
                 except Exception as e:
@@ -61,7 +61,7 @@ class BlackjackServer(object):
         else:
             self.clients[sock].strikes += 1
             try:
-                client.sendall('[ERRR|{strike}|{reason}]'.format(
+                client.sendall('[errr|{strike}|{reason}]'.format(
                     strike=self.clients[sock].strikes,
                     reason='You must send a JOIN before you can do anything else'))
             except Exception as e:
