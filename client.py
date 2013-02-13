@@ -5,9 +5,12 @@ from client_ui import ConsoleUI
 from select import select
 import sys
 import signal
+import argparse
+
 
 class BlackjackClient(object):
     def __init__(self, host='', port=36799):
+        
         self.host = host
         self.port = port
 
@@ -61,4 +64,22 @@ class BlackjackClient(object):
                 self.m_handlers[m_type](*mess_args)
 
 if __name__=='__main__':
-    BlackjackClient().main()
+    parser = argparse.ArgumentParser(
+        description='A client for the CSCI 367 network blackjack game', 
+        add_help=False)
+    parser.add_argument(
+            '-h','--host', 
+            default='', 
+            help='the host where the server resides', 
+            metavar='host', 
+            dest='host')
+    parser.add_argument(
+            '-p','--port',
+            default=36799,
+            type=int,
+            help='the port where the server is listening',
+            metavar='host',
+            dest='host')
+    args = vars(parser.parse_args())
+    
+    BlackjackClient(**args).main()

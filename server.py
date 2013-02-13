@@ -6,6 +6,7 @@ from helpers import MessageBuffer
 from collections import deque, defaultdict
 import signal
 import sys
+import argparse
 
 class Client(object):
     def __init__(self, sock):
@@ -19,10 +20,10 @@ class Client(object):
 
 
 class BlackjackServer(object):
-    def __init__(self):
+    def __init__(self, port=36799, timeout=30):
         self.host = ''
-        self.port = 36799 #look this up
-        self.timeout = 30
+        self.port = port #look this up
+        self.timeout = timeout
 
         self.m_handlers = {} #CMND:func(client, *args) pairs
         self.clients = {} #sock:Client pairs
@@ -114,4 +115,25 @@ class BlackjackServer(object):
                         self.drop_client(sock)
 
 if __name__ == '__main__':
-    BlackjackServer().serve()
+
+    parser = argparse.ArgumentParser(
+        description='A server for the CSCI 367 network blackjack game', 
+        add_help=False)
+    parser.add_argument(
+            '-p','--port',
+            default=36799,
+            type=int,
+            help='the port where the server is listening',
+            metavar='port',
+            dest='port')
+    parser.add_argument(
+            '-t','--timeout',
+            default=30,
+            type=int,
+            help='the timeout we wait to allow a client to act',
+            metavar='timeout',
+            dest='timeout')
+
+    args = vars(parser.parse_args())
+
+    BlackjackServer(**args).serve()
