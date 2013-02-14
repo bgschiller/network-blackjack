@@ -9,7 +9,7 @@ import argparse
 
 
 class BlackjackClient(object):
-    def __init__(self, host='', port=36799):
+    def __init__(self, host='', port=36709):
         
         self.host = host
         self.port = port
@@ -75,11 +75,14 @@ if __name__=='__main__':
             dest='host')
     parser.add_argument(
             '-p','--port',
-            default=36799,
+            default=36709,
             type=int,
             help='the port where the server is listening',
-            metavar='host',
-            dest='host')
-    args = vars(parser.parse_args())
-    
+            metavar='port',
+            dest='port')
+    try:
+        args = vars(parser.parse_args())
+    except:
+        parser.print_help()
+        exit(1) 
     BlackjackClient(**args).main()
