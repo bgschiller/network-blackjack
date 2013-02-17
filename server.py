@@ -4,10 +4,15 @@ import traceback
 from select import select
 from helpers import MessageBuffer
 from collections import deque, defaultdict
+from datetime import datetime, timedelta
 import signal
 import sys
 import argparse
 import pickle
+import itertools
+import random
+import logging
+
 
 class Client(object):
     def __init__(self, sock):
@@ -26,7 +31,7 @@ class BlackjackDeck(object):
         self.num_decks = 2
         self.shuffle()
     def shuffle(self):
-        self.cards = deque(itertools.product(self.values, self.suits)) * self.num_decks
+        self.cards = deque( list(itertools.product(self.values, self.suits)) * self.num_decks )
         random.shuffle(self.cards)
     def deal(self,n):
         return [self.cards.popleft() for x in range(n)]
@@ -80,7 +85,7 @@ class BlackjackGame(object):
             raise ValueError('The table is already full; cannot add another player')
 
     def ask_for_bets(self):
-       '''ask to send an ante message, reset the timer'''
+        '''ask to send an ante message, reset the timer'''
         if not self.players:
             return self.drop_game()
         if self.timer < datetime.now(): 
@@ -185,7 +190,7 @@ class BlackjackServer(object):
         self.players = []
         self.waiting = deque()
         self.state='waiting to start game'
-        self.game = BlackjackGame()
+        self.game = BlackjackGame(timeout)
 
     def broadcast(self, msg):
         for client in self.clients.keys():
@@ -255,9 +260,9 @@ class BlackjackServer(object):
         exit(0)
 
     def serve(self):
+        timeout = None
         while True:
             print 'watching {} clients'.format(len(self.watched_socks) - 1)
-            timeout = self.timeout if self.game.time_sensitive() else None
             try:
                 inputready, _, _ = select(self.watched_socks, [], [], timeout) 
             except Exception as e:
@@ -277,7 +282,8 @@ class BlackjackServer(object):
                     except Exception as e:
                         traceback.print_exc()
                         self.drop_client(sock)
-
+            self.game.on_timeout()
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='A server for the CSCI 367 network blackjack game', 
