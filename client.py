@@ -3,6 +3,7 @@ import socket as s
 from helpers import MessageBuffer
 from client_ui import ConsoleUI
 from select import select
+from collections import defaultdict
 import sys
 import signal
 import argparse
@@ -16,7 +17,7 @@ class BlackjackClient(object):
 
         self.ui = ConsoleUI(self.send_chat)
 
-        self.m_handlers = {}
+        self.m_handlers = defaultdict(lambda: self.handle_default)
         self.m_handlers['conn'] = self.handle_conn
         self.m_handlers['chat'] = self.ui.show_chat
 
@@ -30,7 +31,9 @@ class BlackjackClient(object):
 
     def exit(self,signum, frame):
         self.server.sendall('[exit]')
-        
+
+    def handle_default(self, *args):
+        print('uknown message, args: {}'.format(args))
 
     def handle_conn(self, timeout,location,cash):
         print('Connection established!')

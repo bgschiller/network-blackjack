@@ -3,6 +3,7 @@ import socket as s
 import traceback
 from select import select
 from helpers import MessageBuffer
+from server_utils import BlackjackGame
 from collections import deque, defaultdict
 from datetime import datetime, timedelta
 import signal
@@ -24,247 +25,6 @@ class Client(object):
     #def __del__(self):
     #    del self.mbuffer
 
-class BlackjackDeck(object):
-    def __init__(self):
-        self.values = map(str, range(1,10)) + ['T','J','Q','K']
-        self.suits = ['H','S','C','D']
-        self.num_decks = 2
-        self.shuffle()
-    def shuffle(self):
-        self.cards = deque( list(itertools.product(self.values, self.suits)) * self.num_decks )
-        random.shuffle(self.cards)
-    def deal(self,n):
-        return [self.cards.popleft() for x in range(n)]
-
-class BlackjackHand(object):
-    def __init__(self, cards):
-        self.cards=cards
-    def hit(self, card):
-        self.cards += card
-    def value(self):
-        val = 0
-        ace_present = False
-        for card in self.cards:
-            if card[0] == 'A':
-                ace_present = True
-            val += 10 if card[0] in ['T','J','Q','K'] else int(card[0])
-        if ace_present and val + 10 <= 21:
-            val += 10
-        return val
-
-class BlackjackError(Exception):
-    pass
-
-class BlackjackGame(object):
-    '''So what I ended up doing is making an on_timeout callable attribute, 
-    along with a timer attribute. All 'state' methods return a tuple of 
-    (msg to send, next timeout in seconds, (player id,error), (player id,error), ...)
-    They also check the timer at every call to see if they should actually run yet or if 
-    the server only returned because of a chat message or something. 
-    This is troublesome because that means they will ALWAYS wait until the timeout is up
-    before running. A solution might be to have the server do some checking before it calls
-    'on_timeout'. This would require the server to become time-aware, however.'''
-    
-    def __init__(self, timeout):
-        self.MAX_PLAYERS = 6
-        self.MIN_BET = 5
-        self.players = {} #seat num: (id,cash) pairs
-        self.deck = BlackjackDeck()
-        self.bets = {} #seat num:bet pairs
-        self.hands = {} #seat num:BlackjackHand pairs
-        self.whose_turn=1 #index into self.players
-        self.state = 'waiting for players'
-        self.logger = logging.getLogger(__name__)
-        self.timeout=timeout
-        self.split_store = False
-        self.on_timeout = False
-        
-    def add_player(self, id_, cash):
-        '''Add a player to the game, unless one is running
-        returns (like all BlackjackGame methods) a tuple of msg-to-send and the next timeout in seconds'''
-        if self.in_progress():
-            raise BlackjackError('A game is already in progress. Cannot add player {}'.format(id_))
-        try:
-            next_seat = min(set(range(1,self.MAX_PLAYERS + 1)) - set(self.players.keys()))
-            self.players[next_seat] = (id_,cash)
-            self.state = 'waiting to start game'
-            if not self.timer:
-                self.timer = datetime.now() + timedelta(seconds=timeout)
-                self.on_timeout = self.get_bets
-                return (None, self.timeout)
-            else:
-                return (None, (self.timer - datetime.now()).seconds)
-        except ValueError as e: #we get a value error when we take min([])
-            raise ValueError('The table is already full; cannot add another player')
-
-    def ask_for_bets(self):
-        '''ask to send an ante message, reset the timer'''
-        if not self.players:
-            return self.drop_game()
-        if self.timer < datetime.now(): 
-            #if we haven't reached a timeout yet, update the server on our wait time, then return
-            return (None, (self.timer - datetime.now()).seconds)
-        self.state = 'waiting for antes'
-        msg = '[ante|{:0>}'.format(self.MIN_BET)
-        self.timer = datetime.now() + timedelta(seconds=timeout)
-        self.on_timeout = self.deal
-        return (msg, self.timeout)        
-
-    def deal(self, shuf=True):
-        '''First check if everyone made a bet. If not, drop them
-        Modify state to represent initial deal.
-        return the deal msg for the server to pass to clients.
-        Should also change the state'''
-        if self.timer < datetime.now(): 
-            #if we haven't reached a timeout yet, update the server on our wait time, then return
-            return (None, (self.timer - datetime.now()).seconds)
-
-        for non_compliant in (set(self.players.keys()) - set(self.bets.keys())):
-            self.drop_player(non_compliant)
-        if not self.players:
-            return self.drop_game()
-
-        if shuf: 
-            self.deck.shuffle()
-
-        self.hands['dealer'] = Blackjackhand(self.deck.deal(2))
-        msg = ['[deal']
-        msg.append(self.hands['dealer'].cards[0]) #only reveal one dealer card
-        msg.append('shufy' if shuf else 'shufn')
-
-        for seat_num in range(1,self.MAX_PLAYERS + 1):
-            if seat_num in self.players:
-                self.cards[seat_num] = BlackjackHand(self.deck.deal(2))
-                msg.append('{player[0]:<12},{player[1]:0>10},{cards[0]},{cards[1]}'.format(player=self.players[seat_num], cards=self.hands[seat_num].cards))
-            else:
-                msg.append('')
-        msg[-1] += ']' #closing brace to message
-        self.whose_turn=1
-        self.timer = datetime.now() + timedelta(seconds=self.timeout)
-        if self.hands['dealer'].cards[0][0] == 'A': #dealer has ace showing
-            self.state = 'waiting for insurance'
-            self.on_timeout = self.ensure_insurance
-            return ('|'.join(msg), self.timeout)
-        self.on_timeout = self.player_turn
-        return ('|'.join(msg), self.timeout)
-
-    def ensure_insurance(self):
-        if self.timer < datetime.now(): 
-            #if we haven't reached a timeout yet, update the server on our wait time, then return
-            return (None, (self.timer - datetime.now()).seconds)
-        for non_compliant in (set(self.players.keys()) - set(self.bets.keys())):
-            self.drop_player(non_compliant)
-        if not self.players:
-            return self.drop_game()
-        self.state = 'playing out turns'
-        return self.player_turn()
-
-    def player_turn(self):
-        if self.whose_turn > self.MAX_PLAYERS:
-            return self.payout()
-        if self.whose_turn not in self.players or self.hands[self.whose_turn].value() >= 21:
-            self.whose_turn += 1
-            return (None, 0) # a timeout of 0 returns right away,
-            # so the server will call player_turn again
-        msg = '[turn|{}]'.format(self.players[self.whose_turn][0])
-        #Sorry for the confusing on_timeout. The idea is that if we haven't
-        # heard a turn msg from a player before the bell rings, we should drop them.
-        self.on_timeout = lambda : self.drop_player(self.whose_turn)
-        self.timer = datetime.now() + timedelta(seconds=self.timeout)
-        return (msg, self.timeout)
-
-    def player_action(self,action):
-        '''process a [turn|action] message, changing the internal state 
-        queue up a stat message, set timeout to 0 and on_timeout to player_turn if it's the next player's turn, 
-        set timeout to self.timeout if we're remaining on this player's turn.
-        precondition: the turn message must have originated from the player whose turn it is.
-        
-        probably we want to refactor this into a function for each action'''
-        msg = '[stat|{id_}|{action}|{card}|{bust}|{bet}]'
-        params = {
-                'id_':self.players[self.whose_turn][0],
-                'bet':self.bets[self.whose_turn],
-                'action':action
-                }
-        if action == 'hitt':
-            new_card = self.deck.deal(1)[0]
-            self.hands[self.whose_turn].cards += new_card
-            params['card'] = new_card
-            if self.hands[self.whose_turn].value() >= 21:
-                if self.split_store:
-                    raise BlackjackError('handle bust after split')
-                else:
-                    self.whose_turn += 1
-                    self.on_timeout = self.player_turn
-                    self.timer = datetime.now() # move onto next player right away
-            else: #give the player another TIMEOUT secs before we drop them
-                self.timer = datetime.now() + timedelta(seconds=self.timeout)
-        elif action == 'stay':
-            if self.split_store:
-                raise BlackjackError('handle second hand after split')
-            else:
-                params['card'] = 'xx'
-                self.whose_turn += 1
-                self.timer = datetime.now() #move onto next player right away
-                self.on_timeout = self.player_turn
-        elif action == 'down':
-            if len(self.hands[self.whose_turn].cards) > 2:
-                #a player may only double down on their first move
-                raise BlackjackError("I'm not prepared for that!")
-            new_card = self.deck.deal(1)[0]
-            self.hands[self.whose_turn].cards += new_card
-            params['card'] = new_card
-            params['bet'] *= 2
-            self.bets[self.whose_turn] *= 2
-            self.whose_turn += 1
-            self.on_timeout = self.player_turn
-            self.timer = datetime.now() # move on right away
-        elif action == 'splt':
-            if len(self.hands[self.whose_turn].cards) > 2 or self.split_store:
-                raise BlackjackError('splits only allowed on first turns and only once')
-            if self.hands[self.whose_turn].cards[0][0] != self.hands[self.whose_turn].cards[1][0]:
-                raise BlackjackError('splits only allowed on cards of same value!')
-            new_card = self.deck.deal(1)[0]
-            params['card'] = new_card
-            #save off second card
-            self.split_store = self.hands[self.whose_turn].cards[1]
-            self.hands[self.whose_turn].cards[1] = new_card
-            self.timer = datetime.now() + timedelta(seconds=self.timeout)
-
-        params['bust'] = 'busty' if self.hands[self.whose_turn].value() > 21 else 'bustn'
-        return msg.format(**params)
-
-    def payout(self):
-        msg = ['[endg']
-        dealer_val = self.hands['dealer'].value()
-        for seat_num in range(1,self.MAX_PLAYERS):
-            if seat_num not in self.players:
-                msg.append('')
-                continue
-            id_, cash = self.players[seat_num]
-            player_val = self.hands[seat_num].value()
-            if player_val > dealer_val:
-                result = 'WON'
-                cash += self.bets[seat_num]
-            elif player_val < dealer_val:
-                result = 'LOS'
-                cash -= self.bets[seat_num]
-            else:
-                result = 'TIE'
-            self.players[seat_num] = (id_, cash)
-            msg.append('{id_:<12},{result},{cash:0>10}'.format(
-                id_, result, cash))
-        msg[-1] += ']'
-        raise BlackjackError("Make sure that the server reads off the values of cash")
-        return '|'.join(msg)
-    
-    def in_progress(self):
-        return self.state in ['waiting for players', 'waiting to start game']
-
-
-    def drop_player(self, player):
-        #remember that player_turn expects us to check and reset the timer here.
-        raise BlackjackError("I'm not prepared for that! Only well-behaved clients for the time-being.")
 
 class BlackjackServer(object):
     def __init__(self, accounts, port=36709, timeout=30):
@@ -318,7 +78,6 @@ class BlackjackServer(object):
         except Exception as e:
             traceback.print_exc()
             self.drop_client(sock)
-            return
 
     def handle_chat(self, sock, text):
         if self.clients[sock]: 
@@ -373,7 +132,46 @@ class BlackjackServer(object):
             pickle.dump(dict(self.accounts),account_f)
         exit(0)
 
-    def serve(self):
+    def accept_client(self):
+        client, address = self.server.accept()
+        self.watched_socks.append(client)
+        self.clients[client] = Client(client)
+
+    def wait_for_players(self):
+        print('waiting for clients to join...')
+        while not self.players:
+            inputready, _, _ = select(self.watched_socks, [], [])
+            if sock == self.server:
+                self.accept_client()
+            else: #it's an existing client
+                self.clients[sock].mbuffer.update()
+                while len(self.clients[sock].mbuffer.messages) > 0:
+                    m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
+                    if m_type == 'join':
+                        self.handle_join(sock, mess_args)
+                    else:
+                        self.scold(sock,
+                                'you must join before you may participate')
+        print('waiting for more players...')
+        start = time()
+        while time() - start > self.timeout:
+
+    
+    def 
+    def scold(self, sock, reason):
+        try:
+            self.clients[sock].strikes += 1
+            sock.sendall('[errr|{strike}|{reason}]'.format(
+                strike=self.clients[sock].strikes,
+                reason=reason))
+            if self.clients[sock].strikes >= self.MAX_STRIKES:
+                self.drop_client(sock)
+        except Exception as e:
+            traceback.print_exc()
+            self.drop_client(sock)
+ 
+
+    def mainloop(self):
         timeout = None
         while True:
             print 'watching {} clients'.format(len(self.watched_socks) - 1)
@@ -393,11 +191,15 @@ class BlackjackServer(object):
                         while len(self.clients[sock].mbuffer.messages) > 0:
                             m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
                             self.m_handlers[m_type](sock, *mess_args)
+                            if self.game.trigger(
+                                    self.clients[sock].id_, m_type, mess_args):
+                                print 'ought to be handling {}'.format(
+                                        self.game.on_trigger())
                     except Exception as e:
                         traceback.print_exc()
                         self.drop_client(sock)
-            if self.game.on_timeout:
-                self.game.on_timeout()
+            else: #if we returned because of a timeout
+                print 'ought to be handling {}'.format(self.game.on_timeout())
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

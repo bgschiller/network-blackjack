@@ -29,3 +29,4 @@ class MessageBuffer(object):
         if len(self._buffer) > MAX_LEN:
             self._buffer = '' #ignore messages longer than MAX_LEN
 
+

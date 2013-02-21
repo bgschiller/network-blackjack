@@ -1,2 +1,0 @@
-#!/bin/bash
-fuser -v -n tcp $1
