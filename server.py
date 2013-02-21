@@ -154,10 +154,24 @@ class BlackjackServer(object):
                                 'you must join before you may participate')
         print('waiting for more players...')
         start = time()
-        while time() - start > self.timeout:
-
+        while time() - start < self.timeout:
+            this_to = max(self.timeout - (time() - start), 0) 
+            inputready, _, _ = select(self.watched_socks, [], [], this_to)
+            if sock == self.server:
+                self.accept_client()
+            else:
+                self.clients[sock].mbuffer.update()
+                while len(self.clients[sock].mbuffer.messages) >0:
+                    m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
+                    if m_type in ['join','chat', 'exit']:
+                        self.m_handlers[m_type](sock, *mess_args)
+                    else:
+                        self.scold(sock, 'Only join, chat, and exit are valid commands while we are waiting for players. ' +
+                            'You sent a "{}"'.format(m_type))
     
-    def 
+    def serve(self):
+        self.wait_for_players()
+
     def scold(self, sock, reason):
         try:
             self.clients[sock].strikes += 1
