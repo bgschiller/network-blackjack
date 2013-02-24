@@ -155,22 +155,157 @@ class BlackjackServer(object):
         print('waiting for more players...')
         start = time()
         while time() - start < self.timeout:
-            this_to = max(self.timeout - (time() - start), 0) 
-            inputready, _, _ = select(self.watched_socks, [], [], this_to)
-            if sock == self.server:
-                self.accept_client()
+            this_timeout = max(self.timeout - (time() - start), 0) 
+            inputready, _, _ = select(self.watched_socks, [], [], this_timeout)
+            for sock in inputready:
+                if sock == self.server:
+                    self.accept_client()
+                else:
+                    self.process_message(sock, 
+                            allowed_types=['join','chat','exit'])
+    def get_antes(self):
+        if not self.players:
+            return self.drop_game()
+        self.state = 'waiting for antes'
+        self.broadcast('[ante|{:0>10}'.format(self.MIN_BET))
+        start = time()
+        while time() - start < self.timeout:
+            this_timeout = max(self.timeout - (time() - start), 0)
+            inputready, _, _ = select(self.watched_socks, [], [], this_timeout)
+            for sock in inputready:
+                if sock == self.server:
+                    self.accept_client()
+                else:
+                    self.process_message(sock,['join','chat','exit','ante'])
+        for no_ante_player in (set(self.players.keys()) - set(self.bets.keys())):
+            self.drop_player(no_ante_player)
+
+    def deal(self, shuf=True):
+        if not self.players:
+            return self.drop_game()
+        if shuf:
+            self.deck.shuffle()
+
+        self.hands['dealer'] = Blackjackhand(self.deck.deal(2))
+        msg = ['[deal']
+        msg.append(self.hands['dealer'].cards[0]) # only reveal one dealer card
+        msg.append('shufy' if shuf else 'shufn')
+
+        for seat_num in range(1,self.MAX_PLAYERS + 1):
+            whose_seat = [s for s,p in self.players.iter_items() if p.seat == seat_num]
+            if whose_seat == []:
+                msg.append('')
             else:
-                self.clients[sock].mbuffer.update()
-                while len(self.clients[sock].mbuffer.messages) >0:
-                    m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
-                    if m_type in ['join','chat', 'exit']:
-                        self.m_handlers[m_type](sock, *mess_args)
-                    else:
-                        self.scold(sock, 'Only join, chat, and exit are valid commands while we are waiting for players. ' +
-                            'You sent a "{}"'.format(m_type))
-    
+                player = whose_seat[0]
+                self.hands[player] = BlackjackHand(self.deck.deal(2))
+                msg.append('{player.id_:<12},{player.cash:0>10},{cards[0]},{cards[1]}'format(player=self.players[player], cards=self.hands[player].cards))
+        msg[-1] += ']' #closing brace to message
+        self.broadcast('|'.join(msg))
+        if self.hands['dealer'].cards[0][0] == 'A': #dealer has ace showing
+            self.wait_for_insurance()
+           
+    def wait_for_insurance(self):
+        self.state='waiting for insurace'
+        start = time()
+        while time() - start < self.timeout and len(self.insu) < len(self.players):
+            this_timeout = max(self.timeout - (time() - start), 0)
+            inputready, _, _ = select(self.watched_socks, [], [], this_timeout)
+            for sock in inputready:
+                if sock == self.server:
+                    self.accept_client()
+                else:
+                    self.process_message(sock,['join','chat','exit','insu'])
+        for no_insu_player in (set(self.players.keys()) - set(self.insu.keys())):
+            self.drop_player(no_insu_player, 'timeout waiting for insu')
+
+    def play_out_turns(self):
+        for player in sorted(self.players, key=lambda p: self.players[p].seat_num):
+            self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
+            self.split_store = False
+            while player in self.players and not self.player_done:
+                start = time()
+                self.player_moved = False
+                while time() - start < self.timeout and not self.player_moved:
+                    this_timeout = max(self.timeout - (time() - start), 0)
+                    inputready, _, _ = select(self.watched_socks, [], [], this_timeout)
+                    for sock in inputready:
+                        if sock == self.server:
+                            self.accept_client()
+                        elif sock == player:
+                            self.process_message(player,['chat','exit','turn'])
+                        else:
+                            self.process_message(sock, ['join','chat','exit'])
+                if not self.player_moved:
+                    self.drop_player(player, 'timeout waiting for turn')
+
+    def handle_turn(self,sock,action):
+        action_handlers = {
+                'hitt':self.action_hitt,
+                'stay':self.action_stay,
+                'down':self.action_down,
+                'splt':self.action_split
+            }
+        self.player_moved = True
+        action_handlers[action](sock)
+
+    def action_hitt(self,player):
+        new_card = self.deck.deal(1)[0]
+        player_id = self.clients[player].id_
+
+        self.hands[player].cards += new_card
+
+        if self.hands[player].value() >= 21:
+            self.accounts[player_id] -= self.bets[player]
+            self.player_done = True
+        
+        msg = '[stat|{id_}|hitt|{card}|{bust}|{bet}]'.format(
+                id_=player_id,
+                card=new_card,
+                bust = 'busty' if self.hands[player].value() > 21 else 'bustn',
+                bet = self.bets[player])
+        self.broadcast(msg)
+        
+
+    def handle_insu(self, sock, amount):
+        if sock not in self.players:
+            self.scold(sock, "You're not a player!")
+            return
+        amount = int(amount)
+        if amount > self.bets[sock]/2:
+            self.scold(sock, 'Insurance must be no more than half your bet, rounded down. '
+                    + 'You bet ${} and asked for ${} insurance'.format(
+                        self.bets[sock], amount))
+            return
+        self.insu[sock] = amount
+
+    def process_message(self, sock, allowed_types):
+        self.clients[sock].mbuffer.update()
+        while len(self.clients[sock].mbuffer.messages) > 0:
+            m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
+            if m_type in allowed_types:
+                try:
+                    self.m_handlers[m_type](sock, *mess_args)
+                except Exception as e:
+                    logger.error('tried to process message {}|{} and hit exception:\n{}'.format(traceback.format_exc()))
+            else:
+                self.scold(sock 'Only {} are valid commands while state is {}'.format(allowed_types, self.state) +
+                        'You sent a "{}"'.format(m_type))
+
+        
+    def handle_ante(self, sock, amount):
+        if sock not in self.players:
+            self.scold(sock, "You're not playing!")
+            return
+        amount = int(amount)
+        if amount < self.MIN_BET:
+            self.scold(sock, 'The minimum ante is {}. You gave {}'.format(
+                self.MIN_BET, amount))
+        self.bets[sock] = amount
+
     def serve(self):
         self.wait_for_players()
+        self.get_antes()
+        self.deal()
 
     def scold(self, sock, reason):
         try:
