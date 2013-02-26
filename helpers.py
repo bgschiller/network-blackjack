@@ -2,6 +2,7 @@ from collections import deque
 from itertools import dropwhile
 import socket as s
 import re
+import logging
 
 READSIZE = 1024
 MESS_RE = re.compile(r'\[.*?\]',re.MULTILINE) #maybe the flag is not needed?
@@ -28,5 +29,13 @@ class MessageBuffer(object):
                 re.sub(MESS_RE, '', self._buffer)))
         if len(self._buffer) > MAX_LEN:
             self._buffer = '' #ignore messages longer than MAX_LEN
+
+class ChatHandler(logging.Handler):
+    def __init__(self, broadcast):
+        logging.Handler.__init__(self)
+        self.broadcast = broadcast
+
+    def emit(self, record):
+        self.broadcast('[chat|SERVER      |{}'.format(record))
 
 
