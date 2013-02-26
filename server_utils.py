@@ -9,7 +9,7 @@ class BlackjackDeck(object):
         self.num_decks = 2
         self.shuffle()
     def shuffle(self):
-        self.cards = deque( list(itertools.product(self.values, self.suits)) * self.num_decks )
+        self.cards = deque( map(lambda tup: ''.join(tup) ,itertools.product(self.values, self.suits)) * self.num_decks )
         random.shuffle(self.cards)
     def deal(self,n):
         return [self.cards.popleft() for x in range(n)]

@@ -8,6 +8,9 @@ READSIZE = 1024
 MESS_RE = re.compile(r'\[.*?\]',re.MULTILINE) #maybe the flag is not needed?
 MAX_LEN = 1024
 
+class MessageBufferException(Exception):
+    pass
+
 class MessageBuffer(object):
     def __init__(self, sock):
         self.messages = deque([])
@@ -17,7 +20,7 @@ class MessageBuffer(object):
     def update(self):
         new_data = self.sock.recv(READSIZE).strip('\n\r')
         if not new_data:
-            raise Exception('here in MessageBuffer, we believe the socket is closed')
+            raise MessageBufferException('here in MessageBuffer, we believe the socket is closed')
         self._buffer += new_data
         new_messages = re.findall(MESS_RE, self._buffer)
         for message in new_messages:
@@ -36,6 +39,6 @@ class ChatHandler(logging.Handler):
         self.broadcast = broadcast
 
     def emit(self, record):
-        self.broadcast('[chat|SERVER      |{}'.format(record))
+        self.broadcast('[chat|SERVER      |{}'.format(record).strip('[]|,'))
 
 
