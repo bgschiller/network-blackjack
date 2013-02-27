@@ -12,7 +12,6 @@ import argparse
 import json
 import logging
 
-import pdb
 
 class Client(object):
     def __init__(self, sock):
@@ -74,27 +73,6 @@ class BlackjackServer(object):
         c_handler.setLevel(logging.INFO)
         c_handler.setFormatter(formatter)
         self.logger.addHandler(c_handler)
-        '''
-        #this is a hack to initialize ChatHandler
-        #logging.handlers.ChatHandler = ChatHandler
-        
-        console = logging.StreamHandler()
-        console.setLevel(logging.DEBUG)
-        console.setFormatter(formatter)
-        self.logger.addHandler(c_handler)
-
-        f_handler = logging.FileHandler('server.log')
-        f_handler.setLevel(logging.WARN)
-        f_handler.setFormatter(formatter)
-        self.logger.addHandler(f_handler)
-'''
-        self.logger.info('creating an instance of auxiliary_module.Auxiliary')
-        self.logger.info('created an instance of auxiliary_module.Auxiliary')
-        self.logger.info('calling auxiliary_module.Auxiliary.do_something')
-        self.logger.info('finished auxiliary_module.Auxiliary.do_something')
-        self.logger.info('calling auxiliary_module.some_function()')
-        self.logger.info('done with auxiliary_module.some_function()')
-
         
         self.m_handlers = {} #CMND:func(client, *args) pairs
         self.m_handlers['join'] = self.handle_join
@@ -165,9 +143,9 @@ class BlackjackServer(object):
     def drop_client(self, sock, reason=None):
         save_id = 'an unknown client' if not sock in self.clients else self.clients[sock].id_
         if sock in self.clients:
-            self.logger.info('dropping {}, id: {} because: {}'.format(sock, self.clients[sock].id_, reason if reason is not None else '(no reason given)'))
             del self.clients[sock]
             self.broadcast('[exit|{id_}]'.format(id_=save_id))
+            self.logger.info('dropping {}, id: {} because: {}'.format(sock, save_id, reason if reason is not None else '(no reason given)'))
         if sock in self.watched_socks:
             self.watched_socks.remove(sock)
         if sock in self.occupied_seats:
@@ -277,6 +255,8 @@ class BlackjackServer(object):
             self.drop_client(no_insu_player, 'timeout waiting for insu')
 
     def play_out_turns(self):
+        if not self.occupied_seats:
+            return self.drop_game()
         self.player_done = False
         for player in sorted(self.occupied_seats, key=lambda p: self.occupied_seats[p]):
             self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
@@ -393,10 +373,6 @@ class BlackjackServer(object):
         self.insu[sock] = amount
 
     def process_message(self, sock, allowed_types):
-        pdb.set_trace()
-        self.logger.debug('top of process message')
-        self.logger.debug('clients is {}'.format(self.clients))
-        self.logger.debug(traceback.format_exc())
         try:
             self.clients[sock].mbuffer.update()
             message_queue = self.clients[sock].mbuffer.messages
@@ -422,7 +398,7 @@ class BlackjackServer(object):
             self.scold(sock, 'The minimum ante is {}. You gave {}'.format(
                 self.MIN_BET, amount))
         self.bets[sock] = amount
-        self.accounts[sock] -= amount
+        self.accounts[self.clients[sock].id_] -= amount
         #take the money right away. pay up if they win.
 
     def serve(self):
@@ -430,16 +406,21 @@ class BlackjackServer(object):
             self.wait_for_players()
             self.game_in_progress = True
             self.get_antes()
-            self.deal()
-            self.play_out_turns()
-            self.payout()
-            self.drop_game()
+            if self.game_in_progress:
+                self.deal()
+            if self.game_in_progress:
+                self.play_out_turns()
+            if self.game_in_progress:
+                self.payout()
+            if self.game_in_progress:
+                self.drop_game()
 
     def drop_game(self):
         self.game_in_progress = False
         self.logger.info('no more players! starting a new game...')
         self.bets = {}
         self.hands = {}
+        self.insu = {}
         while len(self.occupied_seats) < self.MAX_PLAYERS and len(self.lobby) > 0:
             self.occupied_seats[self.lobby.popleft()] = self.empty_seat()
             

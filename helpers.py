@@ -20,11 +20,11 @@ class MessageBuffer(object):
 
     def update(self):
         new_data = self.sock.recv(READSIZE)
-        logger.debug('just off the wire: {}'.format(new_data))
-        if not new_data:
-            sock.close()
+        logger.debug('just off the wire: "{}" (length of {})'.format(new_data, len(new_data)))
+        if len(new_data) == 0 or new_data[0] == '\x04': #0x04 is EOT
+            self.sock.close()
             raise MessageBufferException('here in MessageBuffer, we believe the socket is closed')
-        new_data = new_data.strip('\r\n')
+        new_data = new_data.strip('\r\n\x04') #0x04 is EOT
         self._buffer += new_data
         new_messages = re.findall(MESS_RE, self._buffer)
         for message in new_messages:
