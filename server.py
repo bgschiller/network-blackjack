@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 
+import pdb
 
 class Client(object):
     def __init__(self, sock):
@@ -41,7 +42,7 @@ class BlackjackServer(object):
             with open('blackjack_accounts','r') as account_f:
                 self.accounts.update(json.load(account_f))
                 for k in self.accounts:
-                    self.accounts[k] = int(k)
+                    self.accounts[k] = int(self.accounts[k])
         except IOError:
             pass # don't worry if the file isn't there.
 
@@ -201,7 +202,7 @@ class BlackjackServer(object):
                     self.process_message(sock, allowed_types=['join'])
         print('waiting for more players...')
         start = time()
-        while time() - start < self.timeout and len(self.occupied_seats) < self.MAX_PLAYERS:
+        while time() - start < self.timeout and self.occupied_seats and len(self.occupied_seats) < self.MAX_PLAYERS:
             this_timeout = max(self.timeout - (time() - start), 0) 
             inputready, _, _ = select(self.watched_socks, [], [], this_timeout)
             for sock in inputready:
@@ -392,8 +393,10 @@ class BlackjackServer(object):
         self.insu[sock] = amount
 
     def process_message(self, sock, allowed_types):
+        pdb.set_trace()
         self.logger.debug('top of process message')
         self.logger.debug('clients is {}'.format(self.clients))
+        self.logger.debug(traceback.format_exc())
         try:
             self.clients[sock].mbuffer.update()
             message_queue = self.clients[sock].mbuffer.messages

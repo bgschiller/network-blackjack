@@ -22,6 +22,7 @@ class MessageBuffer(object):
         new_data = self.sock.recv(READSIZE)
         logger.debug('just off the wire: {}'.format(new_data))
         if not new_data:
+            sock.close()
             raise MessageBufferException('here in MessageBuffer, we believe the socket is closed')
         new_data = new_data.strip('\r\n')
         self._buffer += new_data
