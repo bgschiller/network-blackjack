@@ -27,3 +27,4 @@ n7 -> n6 [label=" Bust, stay or \n doubledown; i++"];
 n7 -> "Pay out" [label=" End of game"];
 "Pay out" -> n1 [label = " Start over"];
 }
+

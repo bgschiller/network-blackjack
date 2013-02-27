@@ -8,6 +8,7 @@ READSIZE = 1024
 MESS_RE = re.compile(r'\[.*?\]',re.MULTILINE) #maybe the flag is not needed?
 MAX_LEN = 1024
 
+logger = logging.getLogger('blackjack.helpers')
 class MessageBufferException(Exception):
     pass
 
@@ -18,9 +19,11 @@ class MessageBuffer(object):
         self.sock = sock
 
     def update(self):
-        new_data = self.sock.recv(READSIZE).strip('\n\r')
+        new_data = self.sock.recv(READSIZE)
+        logger.debug('just off the wire: {}'.format(new_data))
         if not new_data:
             raise MessageBufferException('here in MessageBuffer, we believe the socket is closed')
+        new_data = new_data.strip('\r\n')
         self._buffer += new_data
         new_messages = re.findall(MESS_RE, self._buffer)
         for message in new_messages:

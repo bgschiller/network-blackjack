@@ -9,7 +9,7 @@ from time import time
 import signal
 import sys
 import argparse
-import pickle
+import json
 import logging
 
 
@@ -35,11 +35,13 @@ class BlackjackServer(object):
         self.timeout = timeout
         self.join_wait = join_wait
         self.max_tcp = max_tcp
+        self.accounts = {}
         #persistent accounts
-        self.accounts = defaultdict(lambda : 1000)
         try:
             with open('blackjack_accounts','r') as account_f:
-                self.accounts.update(pickle.load(account_f))
+                self.accounts.update(json.load(account_f))
+                for k in self.accounts:
+                    self.accounts[k] = int(k)
         except IOError:
             pass # don't worry if the file isn't there.
 
@@ -132,6 +134,7 @@ class BlackjackServer(object):
     def handle_join(self, sock, id_):
         #split this to a handle_join, midgame, and a handle_join
         self.clients[sock].id_ = id_
+        self.accounts[id_] = self.accounts.get(id_, 1000) #default to 1000
         if not self.game_in_progress and len(self.occupied_seats) < 6:
             location = 'tabl'
             empty_seat = self.empty_seat()
@@ -176,7 +179,7 @@ class BlackjackServer(object):
         self.server.close()
         with open('blackjack_accounts','w') as account_f:
             #we have to cast to dict because defaultdict cannot be pickled.
-            pickle.dump(dict(self.accounts),account_f)
+            json.dump(self.accounts,account_f)
         exit(0)
 
     def accept_client(self):
@@ -246,12 +249,12 @@ class BlackjackServer(object):
             else:
                 player = seated_player[0]
                 self.hands[player] = BlackjackHand(self.deck.deal(2))
+                player_id = self.clients[player].id_
                 msg.append('{id_:<12},{cash:0>10},{cards[0]},{cards[1]}'.format(
-                    id_=self.clients[player].id_, 
-                    cash=self.accounts[player],
+                    id_=player_id, 
+                    cash=self.accounts[player_id],
                     cards=self.hands[player].cards))
         msg[-1] += ']' #closing brace to message
-        self.logger.debug('about to send {}'.format(msg))
         self.broadcast('|'.join(msg))
         if self.hands['dealer'].cards[0][0] == 'A': #dealer has ace showing
             self.wait_for_insurance()
@@ -363,18 +366,19 @@ class BlackjackServer(object):
                 continue
             player = seated_player[0]
             player_val = self.hands[player].value()
+            player_id = self.clients[player].id_
             if player_val > dealer_val:
                 result = 'WON'
-                self.accounts[player] += 2*self.bets[player]
+                self.accounts[player_id] += 2*self.bets[player]
             elif player_val < dealer_val:
                 result = 'LOS'
             else:
                 result = 'TIE'
-                self.accounts[player] += self.bets[player]
+                self.accounts[player_id] += self.bets[player]
             msg.append('{id_:<12},{result},{cash:0>10}'.format(
-                id_=self.clients[player].id_,
+                id_=player_id,
                 result=result,
-                cash=self.accounts[player]))
+                cash=self.accounts[player_id]))
         msg[-1] += ']'
         self.broadcast(msg)
 
@@ -388,21 +392,25 @@ class BlackjackServer(object):
         self.insu[sock] = amount
 
     def process_message(self, sock, allowed_types):
+        self.logger.debug('top of process message')
+        self.logger.debug('clients is {}'.format(self.clients))
         try:
             self.clients[sock].mbuffer.update()
+            message_queue = self.clients[sock].mbuffer.messages
+            while len(message_queue) > 0:
+                m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
+                if m_type in allowed_types:
+                    try:
+                        self.m_handlers[m_type](sock, *mess_args)
+                        if sock in self.clients:
+                            self.clients[sock].strikes = 0  #all sins are forgiven
+                    except Exception as e:
+                        self.logger.error('tried to process message {}|{} and hit exception:\n{}'.format(m_type, mess_args, traceback.format_exc()))
+                else:
+                    self.scold(sock, 'Only {} are valid commands while state is {}'.format(allowed_types, self.state) +
+                            'You sent a "{}"'.format(m_type))
         except MessageBufferException:
             self.drop_client(sock, reason='socket is closed')
-        while len(self.clients[sock].mbuffer.messages) > 0:
-            m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
-            if m_type in allowed_types:
-                try:
-                    self.m_handlers[m_type](sock, *mess_args)
-                    self.clients[sock].strikes = 0  #all sins are forgiven
-                except Exception as e:
-                    self.logger.error('tried to process message {}|{} and hit exception:\n{}'.format(m_type, mess_args, traceback.format_exc()))
-            else:
-                self.scold(sock, 'Only {} are valid commands while state is {}'.format(allowed_types, self.state) +
-                        'You sent a "{}"'.format(m_type))
 
         
     def handle_ante(self, sock, amount):

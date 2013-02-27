@@ -7,4 +7,7 @@ client.sendline('[join|Brian       ]')
 client.expect('conn')
 client.expect('ante')
 client.sendline('[ante|0000000008]')
-
+client.expect('deal')
+client.sendline('[exit]')
+client.expect('exit')
+client.expect('Brian       ')
