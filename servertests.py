@@ -2,7 +2,7 @@ import pexpect
 import sys
 import random
 import argparse
-
+import traceback
 
 class bcolors(object):
     HEADER = '\033[95m'
@@ -23,18 +23,22 @@ class bcolors(object):
 def is_server_running(host,port):
     '''Try to connect to the server, send a join and expect a conn'''
     try:
-        client = pexpect.spawn('telnet {host} {port}'.format(host,port))
+        client = pexpect.spawn('telnet {} {}'.format(host,port),
+                logfile=sys.stdout)
+        # setting logfile to sys.stdout prints the IO for the child process to the screen
         client.sendline('[join|Brian       ]')
         client.expect('conn')
         client.sendline('[exit]')
         client.kill(9)
         return True
     except:
+        traceback.print_exc()
         return False
 def simple_test(host, port):
     '''Server should function properly up to the deal and first turn message, then exit.'''
     try:
-        client = pexpect.spawn('telnet {host} {port}'.format(host,port) ,logfile=sys.stdout)
+        client = pexpect.spawn('telnet {} {}'.format(host,port),
+                logfile=sys.stdout)
         client.sendline('[join|Brian       ]')
         client.expect('conn')
         client.expect('ante')
