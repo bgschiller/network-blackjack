@@ -150,6 +150,10 @@ class BlackjackServer(object):
             self.watched_socks.remove(sock)
         if sock in self.occupied_seats:
             del self.occupied_seats[sock]
+        if sock in self.insu:
+            del self.insu[sock]
+        if sock in self.bets:
+            del self.bets[sock]
 
     def sighandler(self, signum, frame):
         print('Shutting down server...')

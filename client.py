@@ -10,11 +10,11 @@ import argparse
 
 
 class BlackjackClient(object):
-    def __init__(self, host='', port=36709):
+    def __init__(self, host='', port=36709, name=None):
         
         self.host = host
         self.port = port
-
+        self.name = name
         self.ui = ConsoleUI(self.send_chat)
 
         self.m_handlers = defaultdict(lambda: self.handle_default)
@@ -49,7 +49,8 @@ class BlackjackClient(object):
 
     def join(self):
         self.server.connect((self.host,self.port))
-        self.name = self.ui.get_player_name()
+        if self.name is None:
+            self.name = self.ui.get_player_name()
         self.server.sendall('[join|{_id:<12}]'.format(_id=self.name))
         self.s_buffer=MessageBuffer(self.server)
 
@@ -83,6 +84,12 @@ if __name__=='__main__':
             help='the port where the server is listening',
             metavar='port',
             dest='port')
+    parser.add_argument(
+            '-n','--name',
+            default=None,
+            help='username to use',
+            metavar='username',
+            dest='name')
     try:
         args = vars(parser.parse_args())
     except:

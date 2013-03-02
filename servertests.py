@@ -2,7 +2,6 @@ import pexpect
 import sys
 import random
 import argparse
-import traceback
 
 class bcolors(object):
     HEADER = '\033[95m'
@@ -31,8 +30,7 @@ def is_server_running(host,port):
         client.sendline('[exit]')
         client.kill(9)
         return True
-    except:
-        traceback.print_exc()
+    except (pexpect.TIMEOUT, pexpect.EOF):
         return False
 def simple_test(host, port):
     '''Server should function properly up to the deal and first turn message, then exit.'''
@@ -48,7 +46,7 @@ def simple_test(host, port):
         client.sendline('[exit]')
         client.kill(9)
         return True
-    except:
+    except (pexpect.TIMEOUT, pexpect.EOF):
         return False
 
 
