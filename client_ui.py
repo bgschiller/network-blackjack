@@ -23,4 +23,15 @@ class ConsoleUI(object):
     def send_chat(self):
         chat_line = sys.stdin.readline().strip('\r\n')
         self.chat_callback(chat_line)
+    
+    def connection_established(timeout, location, cash):
+        print ('connection established!')
+        print ('timeout: {}, location: {}, cash: {}'.format(timeout, location, cash))
 
+    def get_ante(self, min_bet):
+        bet = 0
+        while bet < min_bet:
+            bet = int(raw_input('What is your bet? (min {})'.format(min_bet)))
+            if bet < min_bet:
+                print ('That bet is too small.')
+        return bet

@@ -38,11 +38,12 @@ class MessageBuffer(object):
             self._buffer = '' #ignore messages longer than MAX_LEN
 
 class ChatHandler(logging.Handler):
-    def __init__(self, broadcast):
+    def __init__(self, broadcast, name):
         logging.Handler.__init__(self)
         self.broadcast = broadcast
+        self.name = name
 
     def emit(self, record):
-        self.broadcast('[chat|SERVER      |{}'.format(record).strip('[]|,'))
+        self.broadcast('[chat|{:<12}|{}'.format(self.name, str(record).strip('[]|,')))
 
 

@@ -69,7 +69,7 @@ class BlackjackServer(object):
 
 
         self.logger.info('about to make chat handler')
-        c_handler = ChatHandler(self.broadcast)
+        c_handler = ChatHandler(self.broadcast, 'SERVER')
         c_handler.setLevel(logging.INFO)
         c_handler.setFormatter(formatter)
         self.logger.addHandler(c_handler)
@@ -93,6 +93,7 @@ class BlackjackServer(object):
         self.bets = {}
         self.occupied_seats = {}
         self.hands = {}
+        self.insu = {}
         self.deck = BlackjackDeck()
         self.lobby = deque()
         self.state='waiting to start game'
@@ -184,8 +185,8 @@ class BlackjackServer(object):
                     self.process_message(sock, allowed_types=['join'])
         print('waiting for more players...')
         start = time()
-        while time() - start < self.timeout and self.occupied_seats and len(self.occupied_seats) < self.MAX_PLAYERS:
-            this_timeout = max(self.timeout - (time() - start), 0) 
+        while time() - start < self.join_wait and self.occupied_seats and len(self.occupied_seats) < self.MAX_PLAYERS:
+            this_timeout = max(self.join_wait - (time() - start), 0) 
             inputready, _, _ = select(self.watched_socks, [], [], this_timeout)
             for sock in inputready:
                 if sock == self.server:
