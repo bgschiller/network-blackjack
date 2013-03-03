@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import socket as s
-from helpers import MessageBuffer, ChatHandler
+from utils import MessageBuffer, ChatHandler, BlackjackHand, BlackjackPlayer
 from client_ui import ConsoleUI
 from select import select
 from collections import defaultdict
@@ -10,6 +10,9 @@ import argparse
 import logging
 
 class BlackjackClient(object):
+
+    MAX_PLAYERS = 6
+
     def __init__(self, host='', port=36709, name=None):
         
         self.host = host
@@ -20,11 +23,11 @@ class BlackjackClient(object):
             self.name = self.ui.get_player_name()
         else:
             self.name = name
-        
+            self.ui.name = name 
 
 
         self.m_handlers = defaultdict(lambda: self.handle_default)
-        self.m_handlers['conn'] = self.handle_conn
+        self.m_handlers['join'] = self.handle_join
         self.m_handlers['chat'] = self.ui.show_chat
 
         self.server = s.socket(s.AF_INET, s.SOCK_STREAM)
@@ -61,41 +64,7 @@ class BlackjackClient(object):
         c_handler.setFormatter(formatter)
         self.logger.addHandler(c_handler)
         self.game_in_progress = False
-
-    def exit(self,signum=None, frame=None, ret_code=0):
-        self.server.sendall('[exit]')
-        exit(ret_code)
-    def handle_default(self, *args):
-        self.logger.error('uknown message, args: {}'.format(args))
-
-    def handle_conn(self, timeout,location,cash):
-        self.timeout = timeout
-        self.location = location
-        self.cash = cash
-        self.ui.connection_established(timeout,location,cash)
-
-    def handle_ante(self, min_bet):
-        self.game_in_progress = True
-        ante = self.ui.get_ante(min_bet)
-        self.server.sendall('[ante|{:0>10}]'.format(ante))
-
-    def send_chat(self, chat_line):
-        '''callback function for ui'''
-        self.server.sendall('[chat|{text}]'.format(
-            text=chat_line.strip('[]|')))
-
-    def join(self):
-        self.server.connect((self.host,self.port))
-        self.server.sendall('[join|{_id:<12}]'.format(_id=self.name))
-        self.s_buffer=MessageBuffer(self.server)
-
-    def wait_for_game(self):
-        while not self.game_in_progress:
-            input_socks, _, _ = select(self.watched_socks, [], [])
-            for stream in input_socks:
-                if stream == self.server:
-                    self.process_messages(['chat','exit','join','ante'])
-
+        self.hands = False
 
     def process_messages(self, expected_types):
         self.s_buffer.update()
@@ -108,10 +77,73 @@ class BlackjackClient(object):
                 self.exit(ret_code=127)
 
 
+    def exit(self,signum=None, frame=None, ret_code=0):
+        self.server.sendall('[exit]')
+        exit(ret_code)
+    def handle_default(self, *args):
+        self.logger.error('uknown message, args: {}'.format(args))
+
+    def handle_join(self, id, timeout,location,cash, seat_number):
+        self.timeout = timeout
+        self.location = location
+        self.cash = cash
+        self.ui.new_join(id, timeout, location, cash, seat_number)
+
+    def handle_ante(self, min_bet):
+        self.game_in_progress = True
+        ante = self.ui.get_ante(min_bet)
+        self.server.sendall('[ante|{:0>10}]'.format(ante))
+
+    def handle_deal(self, dealer_card, shuf, *player_info):
+        self.players = {}
+        self.seat_to_name = []
+        self.players['SERVER      '] = BlackjackPlayer(
+                id = 'SERVER      ', 
+                cards = [dealer_card], 
+                cash = None, 
+                seat = self.MAX_PLAYERS + 1)
+        for info in player_info:
+            if info:
+                id_, cash, card1, card2 = info.split(',')
+                self.players[id_] = BlackjackPlayer(
+                        id=id_,
+                        cards = [card1,card2],
+                        cash = int(cash),
+                        seat = ix)
+                self.seat_to_name.append(id_)
+        self.ui.deal(shuf, self.players, self.seat_to_name)
+    def send_chat(self, chat_line):
+        '''callback function for ui'''
+        self.server.sendall('[chat|{text}]'.format(
+            text=chat_line.strip('[]|')))
+
+    def join(self):
+        self.server.connect((self.host,self.port))
+        self.server.sendall('[join|{_id:<12}]'.format(_id=self.name))
+        self.s_buffer=MessageBuffer(self.server)
+
+    def wait_for_ante(self):
+        while not self.game_in_progress:
+            input_socks, _, _ = select(self.watched_socks, [], [])
+            for stream in input_socks:
+                if stream == self.server:
+                    self.process_messages(['chat','exit','join','ante'])
+                else:
+                    self.ui.send_chat()
+
+    def wait_for_deal(self):
+        while not self.hands:
+            input_socks, _, _ = select(self.watched_socks, [], [])
+            for stream in input_socks:
+                if stream == self.server:
+                    self.process_messages(['chat','exit','join','deal'])
+                else:
+                    self.ui.send_chat()
+
     def main(self):
         self.join()
-        self.wait_for_game()
-        #next is get_deal
+        self.wait_for_ante()
+        self.wait_for_deal()
         while True:
             input_socks, _, _ = select(self.watched_socks,[],[])
             for stream in input_socks:
