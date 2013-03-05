@@ -2,7 +2,7 @@
 import socket as s
 import traceback
 from select import select
-from utils import MessageBuffer, MessageBufferException, ChatHandler, BlackjackDeck, BlackjackHand, BlackjackError
+from utils import MessageBuffer, MessageBufferException, ChatHandler, BlackjackDeck, BlackjackHand, BlackjackError, escape_chars
 from collections import deque, defaultdict
 from time import time
 import signal
@@ -48,6 +48,11 @@ class BlackjackServer(object):
         #define self.clients first
         self.clients = {} #sock:Client pairs
 
+        #TODO add a special client sock here to implement the gui. This can be 
+        #a dumb client who never manages to get out of the lobby queue,
+        #but receives all the messages that the clients do.
+
+
         #logging stuff
         self.logger = logging.getLogger('blackjack')
         self.logger.setLevel(logging.DEBUG)
@@ -67,7 +72,6 @@ class BlackjackServer(object):
         self.logger.addHandler(ch)
 
 
-        self.logger.info('about to make chat handler')
         c_handler = ChatHandler(self.broadcast, 'SERVER')
         c_handler.setLevel(logging.INFO)
         c_handler.setFormatter(formatter)
@@ -97,7 +101,7 @@ class BlackjackServer(object):
         self.lobby = deque()
         self.state='waiting to start game'
         self.game_in_progress = False
-        self.logger.error('test of logging')
+
     def broadcast(self, msg):
         for client in self.clients.keys():
             try:
@@ -122,10 +126,12 @@ class BlackjackServer(object):
             location = 'lbby'
             self.lobby.append(sock)
         try:
-            sock.sendall('[conn|{timeout}|{location}|{cash:0>10}]'.format(
+            self.broadcast('[join|{id_}|{timeout}|{location}|{cash:0>10}|{seat}]'.format(
+                id_=id_,
                 timeout=self.timeout,
                 location=location,
-                cash=self.accounts[id_]))
+                cash=self.accounts[id_],
+                seat=0 if sock not in self.occupied_seats else self.occupied_seats[sock]))
         except Exception as e:
             self.logger.debug(traceback.format_exc())
             self.drop_client(sock)
@@ -199,6 +205,7 @@ class BlackjackServer(object):
         if not self.occupied_seats:
             return self.drop_game()
         self.state = 'waiting for antes'
+        self.logger.debug('state is {}'.format(self.state))
         self.broadcast('[ante|{:0>10}]'.format(self.MIN_BET))
         start = time()
         while time() - start < self.timeout and len(self.bets) < len(self.occupied_seats):
@@ -244,6 +251,7 @@ class BlackjackServer(object):
            
     def wait_for_insurance(self):
         self.state='waiting for insurace'
+        self.logger.debug('state is {}'.format(self.state))
         start = time()
         while time() - start < self.timeout and len(self.insu) < len(self.occupied_seats):
             this_timeout = max(self.timeout - (time() - start), 0)
@@ -268,7 +276,7 @@ class BlackjackServer(object):
             while not self.player_done and player in self.occupied_seats:
                 start = time()
                 self.player_moved = False
-                while time() - start < self.timeout and not self.player_moved:
+                while time() - start < self.timeout and not self.player_moved and player in self.occupied_seats:
                     this_timeout = max(self.timeout - (time() - start), 0)
                     inputready, _, _ = select(self.watched_socks, [], [], this_timeout)
                     for sock in inputready:
@@ -296,7 +304,7 @@ class BlackjackServer(object):
         new_card = self.deck.deal(1)[0]
         player_id = self.clients[player].id_
 
-        self.hands[player].cards += new_card
+        self.hands[player].cards.append(new_card)
         
         hand_value = self.hands[player].value()
         if hand_value >= 21:
@@ -365,7 +373,7 @@ class BlackjackServer(object):
                 result=result,
                 cash=self.accounts[player_id]))
         msg[-1] += ']'
-        self.broadcast(msg)
+        self.broadcast('|'.join(msg))
 
     def handle_insu(self, sock, amount):
         amount = int(amount)
@@ -433,7 +441,7 @@ class BlackjackServer(object):
             self.clients[sock].strikes += 1
             sock.sendall('[errr|{strike}|{reason}]'.format(
                 strike=self.clients[sock].strikes,
-                reason=reason))
+                reason=reason.translate(escape_chars)))
             if self.clients[sock].strikes >= self.MAX_STRIKES:
                 self.drop_client(sock)
         except Exception as e:
@@ -452,14 +460,14 @@ if __name__ == '__main__':
             dest='port')
     parser.add_argument(
             '-t','--timeout',
-            default=30,
+            default=2,
             type=int,
             help='the timeout we wait to allow a client to act',
             metavar='timeout_secs',
             dest='timeout')
     parser.add_argument(
             '-j', '--join-wait',
-            default=30,
+            default=2,
             type=int,
             help='the time to wait for joins before starting a game',
             metavar='join_wait_secs',

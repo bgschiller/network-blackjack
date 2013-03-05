@@ -2,7 +2,7 @@ import pexpect
 import sys
 import random
 import argparse
-
+import os
 class bcolors(object):
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -25,8 +25,8 @@ def is_server_running(host,port):
         client = pexpect.spawn('telnet {} {}'.format(host,port),
                 logfile=sys.stdout)
         # setting logfile to sys.stdout prints the IO for the child process to the screen
-        client.sendline('[join|Brian       ]')
-        client.expect('conn')
+        client.sendline('[join|tom         ]')
+        client.expect('join')
         client.sendline('[exit]')
         client.kill(9)
         return True
@@ -38,7 +38,7 @@ def simple_test(host, port):
         client = pexpect.spawn('telnet {} {}'.format(host,port),
                 logfile=sys.stdout)
         client.sendline('[join|Brian       ]')
-        client.expect('conn')
+        client.expect('join')
         client.expect('ante')
         client.sendline('[ante|0000000008]')
         client.expect('deal')
@@ -49,8 +49,16 @@ def simple_test(host, port):
     except (pexpect.TIMEOUT, pexpect.EOF):
         return False
 
+def resilient_server(host, port):
+    '''Sends a bunch of junk across the wire. Test passes if the server closes this socket and remains available for other connections'''
+    client = pexpect.spawn('telnet {} {}'.format(host,port), logfile=sys.stdout)
+    while client.isalive():
+        random_string = os.urandom(45).strip('\x1d') 
+        #\x1d is Ctrl-], the escape character for telnet
+        client.sendline(random_string)
+    return is_server_running(host,port)
 
-tests = [is_server_running, simple_test]
+tests = [is_server_running, simple_test, resilient_server]
 def main():
     '''To run these tests, start your server running and pass along the host and port.'''
     parser = argparse.ArgumentParser(
