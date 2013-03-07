@@ -5,11 +5,31 @@ import socket as s
 import re
 import logging
 import random
-
+import traceback
 
 READSIZE = 512
 MESS_RE = re.compile(r'\[.*?\]',re.MULTILINE) #maybe the flag is not needed?
 MAX_LEN = 512
+
+class colors(object):
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    DIM = '\033[90m'
+    PURPLE = '\033[95m'
+
+    def disable(self):
+        self.HEADER = ''
+        self.OKBLUE = ''
+        self.OKGREEN = ''
+        self.YELLOW = ''
+        self.FAIL = ''
+        self.ENDC = ''
+        self.DIM = ''
+        self.PURPLE = ''
 
 #module-level constant exported to (at least) client, server
 escape_chars = maketrans('|[]','!{}')
@@ -25,7 +45,11 @@ class MessageBuffer(object):
         self.sock = sock
 
     def update(self):
-        new_data = self.sock.recv(READSIZE)
+        try:
+            new_data = self.sock.recv(READSIZE)
+        except:
+            logger.error(traceback.format_exc())
+            raise MessageBufferException('socket appears to be closed')
         logger.debug('just off the wire: "{}" (length of {})'.format(new_data, len(new_data)))
         if len(new_data) == 0 or new_data[0] == '\x04': #0x04 is EOT
             self.sock.close()
@@ -80,13 +104,9 @@ class BlackjackDeck(object):
 class BlackjackHand(object):
     def __init__(self, cards):
         self.cards=cards
-    def hit(self, card):
-        self.cards += card
-        return card
     def value(self):
         val = 0
         ace_present = False
-        logger.debug('cards is {}'.format(self.cards))
         for card in self.cards:
             if card[0] == '1':
                 ace_present = True

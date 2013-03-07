@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import socket as s
-from utils import MessageBuffer, ChatHandler, BlackjackHand, BlackjackPlayer, escape_chars
+from utils import MessageBuffer, ChatHandler, BlackjackHand, BlackjackPlayer, escape_chars, colors
 from client_ui import ConsoleUI
 from select import select
 from collections import defaultdict
@@ -55,9 +55,9 @@ class BlackjackClient(object):
         fh = logging.FileHandler('client.log')
         fh.setLevel(logging.DEBUG)
         ch = logging.StreamHandler()
-        ch.setLevel(logging.WARN)
+        ch.setLevel(logging.DEBUG)
         # create formatter and add it to the handlers
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(colors.DIM + '%(asctime)s - %(name)s - %(levelname)s - %(message)s' + colors.ENDC)
         fh.setFormatter(formatter)
         ch.setFormatter(formatter)
         # add the handlers to the logger
@@ -90,11 +90,10 @@ class BlackjackClient(object):
     def handle_default(self, *args):
         self.logger.error('uknown message, args: {}'.format(args))
 
-    def handle_join(self, id, timeout,location,cash, seat_number):
+    def handle_join(self, id, timeout,cash, seat_number):
         self.timeout = timeout
-        self.location = location
         self.cash = cash
-        self.ui.new_join(id, timeout, location, cash, seat_number)
+        self.ui.new_join(id, timeout, cash, seat_number)
 
     def handle_ante(self, min_bet):
         self.game_in_progress = True
@@ -135,12 +134,11 @@ class BlackjackClient(object):
             self.ui.display_turn(name)
 
     def handle_stat(self, id, action, card, bust, bet):
-        if bust == 'busty':
-            self.players[id].cash -= int(bet)
         if card != 'xx':
             self.players[id].hand.cards.append(card)
         self.ui.display_stat(id,action,card,bust,bet)
-        self.handle_turn(id)
+        if action not in ['stay','down'] and self.players[id].hand.value() < 21:
+            self.handle_turn(id)
 
     def handle_endg(self, *player_info):
         for ix, info in enumerate(player_info):
@@ -149,6 +147,7 @@ class BlackjackClient(object):
                 #test how well we've been keeping track of 
                 if self.players[id].cash != cash:
                     self.logger.warn('discrepancy in cash amounts! Server has {}. Client has {}'.format(cash, self.players[id].cash))
+                    self.players[id].cash = cash
 
             else:
                 #delete the player locally
@@ -206,8 +205,8 @@ class BlackjackClient(object):
         
 
     def main(self):
+        self.join()
         while True:
-            self.join()
             self.wait_for_ante()
             self.wait_for_deal()
             self.play_out_turns()

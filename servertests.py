@@ -2,22 +2,7 @@ import pexpect
 import sys
 import random
 import argparse
-import os
-class bcolors(object):
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-
-    def disable(self):
-        self.HEADER = ''
-        self.OKBLUE = ''
-        self.OKGREEN = ''
-        self.WARNING = ''
-        self.FAIL = ''
-        self.ENDC = ''
+from utils import colors
 
 def is_server_running(host,port):
     '''Try to connect to the server, send a join and expect a conn'''
@@ -25,8 +10,9 @@ def is_server_running(host,port):
         client = pexpect.spawn('telnet {} {}'.format(host,port),
                 logfile=sys.stdout)
         # setting logfile to sys.stdout prints the IO for the child process to the screen
-        client.sendline('[join|tom         ]')
-        client.expect('join')
+        client.expect('Connected',timeout=2)
+        client.sendline('[join|Brian       ]')
+        client.expect('conn')
         client.sendline('[exit]')
         client.kill(9)
         return True
@@ -38,7 +24,7 @@ def simple_test(host, port):
         client = pexpect.spawn('telnet {} {}'.format(host,port),
                 logfile=sys.stdout)
         client.sendline('[join|Brian       ]')
-        client.expect('join')
+        client.expect('conn')
         client.expect('ante')
         client.sendline('[ante|0000000008]')
         client.expect('deal')
@@ -49,16 +35,8 @@ def simple_test(host, port):
     except (pexpect.TIMEOUT, pexpect.EOF):
         return False
 
-def resilient_server(host, port):
-    '''Sends a bunch of junk across the wire. Test passes if the server closes this socket and remains available for other connections'''
-    client = pexpect.spawn('telnet {} {}'.format(host,port), logfile=sys.stdout)
-    while client.isalive():
-        random_string = os.urandom(45).strip('\x1d') 
-        #\x1d is Ctrl-], the escape character for telnet
-        client.sendline(random_string)
-    return is_server_running(host,port)
 
-tests = [is_server_running, simple_test, resilient_server]
+tests = [is_server_running, simple_test]
 def main():
     '''To run these tests, start your server running and pass along the host and port.'''
     parser = argparse.ArgumentParser(
@@ -85,12 +63,12 @@ def main():
     args = vars(parser.parse_args())
     
     for test in tests:
-        print bcolors.OKBLUE + 'running test "{}"'.format(test.__name__)
-        print test.__doc__ + bcolors.ENDC
+        print colors.OKBLUE + 'running test "{}"'.format(test.__name__)
+        print test.__doc__ + colors.ENDC
         if test(args['host'],args['port']):
-            print bcolors.OKGREEN + 'test passed' + bcolors.ENDC
+            print colors.OKGREEN + 'test passed' + colors.ENDC
         else:
-            print bcolors.FAIL + 'test failed' + bcolors.ENDC
+            print colors.FAIL + 'test failed' + colors.ENDC
             if args['rigor'] == 'tough':
                 break
 
