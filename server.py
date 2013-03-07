@@ -49,7 +49,7 @@ class BlackjackServer(object):
         self.clients = {} #sock:Client pairs
 
         #TODO add a special client sock here to implement the gui. This can be 
-        #a dumb client who never manages to get out of the lobby queue,
+        #a dumb client who never manages to get out of the lobby queue, (because they're not in it)
         #but receives all the messages that the clients do.
 
 
@@ -369,7 +369,6 @@ class BlackjackServer(object):
             self.results[player_id] += 2*self.bets[player]
             self.logger.debug('win')
         else:#tie
-            self.results[player_id] += self.bets[player]
             self.logger.debug('tie')
             
     def action_stay(self,player):
@@ -389,10 +388,14 @@ class BlackjackServer(object):
 
         new_card = self.deck.deal(1)[0]
         self.hands[player].cards.append(new_card)
+        self.logger.debug('inside action_down, taking extra {}. accounts : {} -> {}'.format(
+            self.bets[player], self.accounts[player_id], self.accounts[player_id] - self.bets[player]))
         self.accounts[player_id] -= self.bets[player]
+        self.logger.debug('doubling bet: {} -> {}'.format(
+            self.bets[player],
+            self.bets[player*2))
         self.bets[player] *= 2
-        
-        msg = '[down|{id_}|down|{card}|{bust}|{bet}]'.format(
+        msg = '[stat|{id_}|down|{card}|{bust}|{bet}]'.format(
                 id_=player_id,
                 card=new_card,
                 bust= 'busty' if self.hands[player].value() > 21 else 'bustn',
