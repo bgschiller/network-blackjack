@@ -1,6 +1,8 @@
 import sys
+import random
+import pickle
 from utils import escape_chars, colors
-     
+
 class ConsoleUI(object):
 
     def __init__(self, send_chat_msg,name = None):
@@ -21,7 +23,7 @@ class ConsoleUI(object):
 
     def get_player_name(self):
         name = raw_input(colors.OKBLUE + 'What is your name? ' + colors.ENDC).translate(None, '[]|,\n')
-        self.name = name
+        self.name = '{:<12}'.format(name)
         return name if len(name) <= 12 else name[:12]
 
     def send_chat(self):
@@ -96,3 +98,50 @@ class ConsoleUI(object):
         print('end of game')
         print(player_info)
 
+
+class AutoUI(ConsoleUI):
+    possible_names = ['Brian']
+    
+    def __init__(self, *args, **kwargs):
+        ConsoleUI.__init__(self, *args, **kwargs)
+        self.first_turn = True
+        #we only want to split or double down on the first turn
+        with open('witty_things.txt','r') as f:
+            self.witty_things = pickle.load(f)
+
+    def send_chat(self):
+        chat_line = sys.stdin.readline().strip('\r\n')
+        if chat_line:
+            self.chat_callback(chat_line)
+        else:
+            wittiness = random.choice(self.witty_things)
+            for line in wittiness.split('\n'):
+                self.chat_callback(line)
+        
+    def get_player_name(self):
+        self.name = random.choice(self.possible_names)
+        print colors.OKBLUE + 'What is your name?' + colors.ENDC, self.name
+        self.name = '{:<12}'.format(self.name)
+        return self.name if len(self.name) <= 12 else self.name[:12]
+
+    def get_insurance(self):
+        insu = random.randint(0,self.bet/2)
+        print colors.OKBLUE + 'What insurance would you like?' + colors.ENDC, insu
+        return insu
+    
+    def get_ante(self, min_bet):
+        min_bet = int(min_bet)
+        self.bet = random.randint(min_bet, min_bet*4)
+        print colors.OKBLUE + 'What is your bet? (min {})'.format(min_bet) + colors.ENDC, self.bet
+        return self.bet
+
+    def get_turn_action(self):
+        my_hand = self.players[self.name].hand
+        ace_present = '1' in [card[0] for card in my_hand.cards]
+        if my_hand.value() <= 16 or (ace_present and my_hand.value() <= 17):
+            action = 'hitt'
+        else:
+            action = 'stay'
+        print colors.OKBLUE + "It's your turn! you have {}".format(my_hand.value()) + colors.ENDC, action
+        return action
+        

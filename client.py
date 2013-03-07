@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import socket as s
 from utils import MessageBuffer, ChatHandler, BlackjackHand, BlackjackPlayer, escape_chars, colors
-from client_ui import ConsoleUI
+from client_ui import ConsoleUI, AutoUI
 from select import select
 from collections import defaultdict
 import sys
@@ -13,11 +13,11 @@ class BlackjackClient(object):
 
     MAX_PLAYERS = 6
 
-    def __init__(self, host='', port=36709, name=None):
+    def __init__(self, host='', port=36709, name=None, ui = ConsoleUI):
         
         self.host = host
         self.port = port
-        self.ui = ConsoleUI(self.send_chat)
+        self.ui = ui(self.send_chat)
 
         if name is None:
             self.name = self.ui.get_player_name()
@@ -57,7 +57,9 @@ class BlackjackClient(object):
         ch = logging.StreamHandler()
         ch.setLevel(logging.DEBUG)
         # create formatter and add it to the handlers
-        formatter = logging.Formatter(colors.DIM + '%(asctime)s - %(name)s - %(levelname)s - %(message)s' + colors.ENDC)
+        format_style = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        formatter = logging.Formatter(colors.DIM + format_style + colors.ENDC)
+        formatter_no_color = logging.Formatter(format_style)
         fh.setFormatter(formatter)
         ch.setFormatter(formatter)
         # add the handlers to the logger
@@ -68,7 +70,7 @@ class BlackjackClient(object):
         self.logger.info('about to make chat handler')
         c_handler = ChatHandler(self.server.sendall)
         c_handler.setLevel(logging.INFO)
-        c_handler.setFormatter(formatter)
+        c_handler.setFormatter(formatter_no_color)
         self.logger.addHandler(c_handler)
         self.game_in_progress = False
         self.players = False
@@ -144,9 +146,11 @@ class BlackjackClient(object):
         for ix, info in enumerate(player_info):
             if info:
                 id, result, cash = info.split(',')
+                cash = int(cash)
+                self.logger.debug('type of self.cash is {}'.format(type(self.players[id].cash)))
                 #test how well we've been keeping track of 
                 if self.players[id].cash != cash:
-                    self.logger.warn('discrepancy in cash amounts! Server has {}. Client has {}'.format(cash, self.players[id].cash))
+                    self.logger.warn('discrepancy in cash amounts! Server has {}. Client has {}...'.format(cash, self.players[id].cash))
                     self.players[id].cash = cash
 
             else:
@@ -235,8 +239,20 @@ if __name__=='__main__':
             help='username to use',
             metavar='username',
             dest='name')
+    parser.add_argument(
+            '-u','--ui',
+            default='console',
+            type=str,
+            help='type of user interface. Options are "console" and "auto"',
+            metavar='ui_type',
+            dest='ui')
+    ui_map = {
+            'console':ConsoleUI,
+            'auto':AutoUI
+            }
     try:
         args = vars(parser.parse_args())
+        args['ui'] = ui_map[args['ui']]
     except:
         parser.print_help()
         exit(1) 

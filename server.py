@@ -64,7 +64,9 @@ class BlackjackServer(object):
         ch = logging.StreamHandler()
         ch.setLevel(logging.DEBUG)
         # create formatter and add it to the handlers
-        formatter = logging.Formatter(colors.DIM + '%(asctime)s - %(name)s - %(levelname)s - %(message)s' + colors.ENDC)
+        format_style = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        formatter = logging.Formatter(colors.DIM + format_style + colors.ENDC)
+        formatter_no_color = logging.Formatter(format_style)
         fh.setFormatter(formatter)
         ch.setFormatter(formatter)
         # add the handlers to the logger
@@ -74,7 +76,7 @@ class BlackjackServer(object):
 
         c_handler = ChatHandler(self.broadcast, 'SERVER')
         c_handler.setLevel(logging.INFO)
-        c_handler.setFormatter(formatter)
+        c_handler.setFormatter(formatter_no_color)
         self.logger.addHandler(c_handler)
         
         self.m_handlers = {} #CMND:func(client, *args) pairs
@@ -417,9 +419,10 @@ class BlackjackServer(object):
                 self.accounts[player_id] += 2*self.bets[player]
             elif player_val < 0:
                 result = 'LOS'
-                self.accounts[player_id] += self.bets[player]
+                #we've already taken their money
             else:
                 result = 'TIE'
+                self.accounts[player_id] += self.bets[player]
             msg.append('{id_:<12},{result},{cash:0>10}'.format(
                 id_=player_id,
                 result=result,

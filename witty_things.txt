@@ -1,0 +1,22 @@
+(lp0
+S'1)  Alexander the Great was a great general.\n... (2) Great generals are forewarned.\n... (3) Forewarned is forearmed.\n... (4) Four is an even number.\n... (5) Four is certainly an odd number of arms for a man to have.\n... (6) The only number that is both even and odd is infinity.\n...\n... Therefore, Alexander the Great had an infinite number of arms.'
+p1
+aS'A budget is just a method of worrying before you spend money, as well as afterward.'
+p2
+aS'A classic is something that everybody wants to have read and nobody wants to read. -- Mark Twain'
+p3
+aS'A diplomat is someone who can tell you to go to hell in such a way that you look forward to the trip'
+p4
+aS'"Just the omission of Jane Austen\'s books alone would make a fairly\ngood library out of a library that hadn\'t a book in it."\n             -- Mark Twain'
+p5
+aS'\xe2\x80\x9cYou speak an infinite deal of nothing.\xe2\x80\x9d \n\xe2\x80\x95 William Shakespeare, The Merchant of Venice'
+p6
+aS'\n                                                        =--_\n                                         .-""""""-.     |* _)\n                                        /          \\   /  /\n                                       /            \\_/  /\n           _                          /|                /\n       _-\'"/\\                        / |    ____    _.-"            _\n    _-\'   (  \'-_            _       (   \\  |\\  /\\  ||           .-\'".".\n_.-\'       \'.   `\'-._   .-\'"/\'.      "   | |/ /  | |/        _-"   (   \'-_\n             \'.      _-"   (   \'-_       \\ | /   \\ |     _.-\'       )     "-._\n           _.\'   _.-\'       )     "-._    ||\\   |\\  \'"\'        .-\'\n         \'               .-\'          `\'  || \\  ||))\njjs__  _  ___  _ ____________ _____  ___ _|\\ _|\\_|\\/ _______________  ___   _\n                       c  c  " c C ""C  " ""  "" ""\n                   c       C\n              C        C\n                   C\n    C     c\n\n'
+p7
+aS'\n                                  /^^^/           /]\n                                 /   ]           / ]\n      O                  _______/    ]___       /  ]\n                        /                \\_____/   /\n   O                  _/   [@]  \\ \\                           ___//_    /..         | |                ]\n    o     /o )   \\/   VVVvvv\\    | |         _/\\    ]\n      O<  )___\\_/\\         |               /    \\  ]\n                     AAA^^^^^              /       \\]\n                      \\_________\\   \\_____/\n                               \\                                     \\____'
+p8
+aS'\n   /\\/\\/\\/\\/\\/\\  \n  <            >\n   |          |\n   |          |\n   |   _  _   |\n  -|_ / \\/ \\_ |-\n |I|  \\_/\\_/  |I|\n  -|   /  \\   |-\n   |   \\__/   |\n   |          |\n   |          |\n   |__________|\n  /___/\\__/\\___ /     | \\|        /\\  |\\ | _@|#_\n  / /\\ | \\| |   |\n  \\/  / \\ / |   |\n   \\_/___/   \\_/ \n'
+p9
+aS'\n         _________   _________   _________   __________\n        /         \\ /         \\ /         \\ /                  |A        | |A        | |A        | |A         |\n        |    ,    | |   _ _   | |    _    | |          |\n        |   / \\   | |  / ^ \\  | |   (_)   | |    /\\    |\n        |  (_ _)  | |  \\   /  | |  (_)_)  | |   <  >   |\n        |   /_\\   | |   \\ /   | |   /_\\   | |    \\/    |\n        |         | |    `    | |         | |          |\n        |        A| |        A| |        A| |         A|\n   jgs  \\_________/ \\_________/ \\_________/ \\__________/\n'
+p10
+a.
