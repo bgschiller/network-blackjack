@@ -2,6 +2,7 @@ import pexpect
 import sys
 import random
 import argparse
+import os
 from utils import colors
 
 def is_server_running(host,port):
@@ -12,7 +13,7 @@ def is_server_running(host,port):
         # setting logfile to sys.stdout prints the IO for the child process to the screen
         client.expect('Connected',timeout=2)
         client.sendline('[join|Brian       ]')
-        client.expect('conn')
+        client.expect('join')
         client.sendline('[exit]')
         client.kill(9)
         return True
@@ -24,7 +25,7 @@ def simple_test(host, port):
         client = pexpect.spawn('telnet {} {}'.format(host,port),
                 logfile=sys.stdout)
         client.sendline('[join|Brian       ]')
-        client.expect('conn')
+        client.expect('join')
         client.expect('ante')
         client.sendline('[ante|0000000008]')
         client.expect('deal')
@@ -37,11 +38,14 @@ def simple_test(host, port):
 
 def resilient_server(host, port):
     '''Sends a bunch of junk across the wire. Test passes if the server closes this socket and remains available for other connections'''
-    client = pexpect.spawn('telnet {} {}'.format(host,port), logfile=sys.stdout)
-    while client.isalive():
+    client = pexpect.spawn('telnet {} {}'.format(host,port))
+    for i in range(20):
         random_string = os.urandom(45).strip('\x1d') 
         #\x1d is Ctrl-], the escape character for telnet
-        client.sendline(random_string)
+        try:
+            client.sendline(random_string)
+        except:
+            pass
     return is_server_running(host,port)
 
 
