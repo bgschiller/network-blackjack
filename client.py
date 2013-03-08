@@ -136,11 +136,20 @@ class BlackjackClient(object):
             self.ui.display_turn(name)
 
     def handle_stat(self, id, action, card, bust, bet):
+        if action == 'splt':
+            self.players[id].split_store = self.players[id].hand.cards[1]
+            del self.players[id].hand.cards[1]
         if card != 'xx':
             self.players[id].hand.cards.append(card)
         self.ui.display_stat(id,action,card,bust,bet)
-        if action not in ['stay','down'] and self.players[id].hand.value() < 21:
+        if action in ['stay','down'] or self.players[id].hand.value() >= 21:
+            #end of their turn, unless they split
+            if self.players[id].split_store:
+                self.players[id].hand.cards = [self.players[id].split_store]
+                self.players[id].split_store = False
+        else: #still their turn
             self.handle_turn(id)
+
 
     def handle_endg(self, *player_info):
         for ix, info in enumerate(player_info):

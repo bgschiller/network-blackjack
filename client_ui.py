@@ -92,7 +92,7 @@ class ConsoleUI(object):
             print(colors.OKGREEN + '{} was dealt a {}'.format(id,card) + colors.ENDC)
         print(colors.OKGREEN + 'their card value is now {}'.format(self.players[id].hand.value()) + colors.ENDC)
         if bust == 'busty':
-            print(colors.OKGREEN + '(they busted)' + colors.ENDC)
+            print(colors.FAIL + '(they busted)' + colors.ENDC)
 
     def end_game(self, player_info):
         print('end of game')

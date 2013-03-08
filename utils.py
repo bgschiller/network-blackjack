@@ -88,6 +88,7 @@ class BlackjackPlayer(object):
         self.hand = BlackjackHand(cards)
         self.cash = cash
         self.seat = seat
+        self.split_store = False
 
 class BlackjackDeck(object):
     def __init__(self):

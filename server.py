@@ -104,6 +104,7 @@ class BlackjackServer(object):
         self.lobby = deque()
         self.state='waiting to start game'
         self.game_in_progress = False
+        self.split_hand = False
 
     def broadcast(self, msg):
         self.logger.debug('sending message: {}'.format(msg))
@@ -278,7 +279,7 @@ class BlackjackServer(object):
         self.player_done = False
         for player in sorted(self.occupied_seats, key=lambda p: self.occupied_seats[p]):
             self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
-            self.split_store = False
+            self.split_hand = False
             while not self.player_done and player in self.occupied_seats:
                 start = time()
                 self.player_moved = False
@@ -370,6 +371,15 @@ class BlackjackServer(object):
             self.logger.debug('win')
         else:#tie
             self.logger.debug('tie')
+
+        if self.split_hand:
+            self.player_done = False
+            self.logger.debug('player has finished the first half of a split turn.' + 
+                    'their hand WAS {}'.format(self.hands[player].cards))
+            self.hands[player].cards = [self.split_hand]
+            self.split_hand = False
+            self.logger.debug('now it is {}'.format(self.hands[player].cards))
+            self.action_hitt(player)
             
     def action_stay(self,player):
         self.player_done = True
@@ -380,7 +390,7 @@ class BlackjackServer(object):
         self.evaluate_hand(player)
 
     def action_down(self,player):
-        if len(self.hands[player].cards) > 2:
+        if len(self.hands[player].cards) > 2 or self.split_hand:
             return self.scold(player, 'You may only double down on your first turn')
         player_id = self.clients[player].id_
         if self.accounts[player_id] < self.bets[player]:
@@ -393,7 +403,7 @@ class BlackjackServer(object):
         self.accounts[player_id] -= self.bets[player]
         self.logger.debug('doubling bet: {} -> {}'.format(
             self.bets[player],
-            self.bets[player*2))
+            self.bets[player]*2))
         self.bets[player] *= 2
         msg = '[stat|{id_}|down|{card}|{bust}|{bet}]'.format(
                 id_=player_id,
@@ -405,7 +415,19 @@ class BlackjackServer(object):
         self.evaluate_hand(player)
 
     def action_split(self,player):
-        raise BlackjackError('Cannot handle splits!')
+        if len(self.hands[player].cards) > 2 or self.split_hand:
+            return self.scold(player, 'You may only split on your first turn') 
+        player_id = self.clients[player].id_
+        self.split_hand = self.hands[player].cards[1]
+        new_card = self.deck.deal(1)[0]
+        self.hands[player].cards[1] = new_card
+        msg = '[stat|{id_}|splt|{card}|bustn|{bet}]'.format(
+            id_=player_id,
+            card = new_card,
+            bet = self.bets[player])
+        self.broadcast(msg)
+
+
 
     def payout(self):
         msg = ['[endg']
@@ -492,6 +514,7 @@ class BlackjackServer(object):
         self.hands = {}
         self.insu = {}
         self.results = defaultdict(lambda : 0)
+        self.split_hand = False
         while len(self.occupied_seats) < self.MAX_PLAYERS and len(self.lobby) > 0:
             new_player = self.lobby.popleft()
             seat_num = self.empty_seat()
