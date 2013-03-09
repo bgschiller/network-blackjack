@@ -431,6 +431,11 @@ class BlackjackServer(object):
 
     def payout(self):
         msg = ['[endg']
+        #pay out insurance
+        for sock in self.insu:
+            player_id = self.clients[sock].id_
+            self.accounts[player_id] += self.insu[sock]
+
         for seat_num in range(1,self.MAX_PLAYERS + 1):
             seated_player = [sock for sock,seat in self.occupied_seats.iteritems() if seat == seat_num]
             if seated_player == []:
@@ -456,14 +461,26 @@ class BlackjackServer(object):
         self.broadcast('|'.join(msg))
 
     def handle_insu(self, sock, amount):
-        amount = int(amount)
+        try:
+            amount = int(amount)
+        except:
+            self.scold(sock, "That's not a number!")
+            return
         if amount > self.bets[sock]/2:
             self.scold(sock, 'Insurance must be no more than half your bet, rounded down. '
                     + 'You bet ${} and asked for ${} insurance'.format(
                         self.bets[sock], amount))
             return
-        self.insu[sock] = amount
-
+        player_id = self.clients[sock].id_
+        if amount > self.accounts[player_id]:
+            self.scold(sock, "You don't have enough money to buy that much insurance")
+            return
+        self.accounts[player_id] -= amount
+        if len(self.hand['dealer'].cards) == 2 and self.hands['dealer'].value() == 21:
+            #this is the amount we will pay that player in insurance
+            self.insu[sock] = 2*amount
+        else:
+            self.insu[sock] = 0
     def process_message(self, sock, allowed_types):
         try:
             self.clients[sock].mbuffer.update()
