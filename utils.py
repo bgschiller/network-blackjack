@@ -35,6 +35,13 @@ class colors(object):
 escape_chars = maketrans('|[]','!{}')
 
 logger = logging.getLogger('blackjack.utils')
+
+def validate_name(name):
+    name = '{:<12}'.format(name)
+    if len(name) > 12:
+        name = name[:12]
+    return name
+
 class MessageBufferException(Exception):
     pass
 

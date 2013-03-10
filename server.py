@@ -10,6 +10,7 @@ import sys
 import argparse
 import json
 import logging
+import string
 
 
 class Client(object):
@@ -95,16 +96,17 @@ class BlackjackServer(object):
         signal.signal(signal.SIGINT, self.sighandler)
 
         self.watched_socks = [self.server]
-        self.bets = {}
-        self.occupied_seats = {}
-        self.hands = {}
-        self.insu = {}
-        self.results = defaultdict(lambda : 0)
-        self.deck = BlackjackDeck()
-        self.lobby = deque()
+        self.bets = {} #sock:ante pairs. These are updated for a split or down
+        self.occupied_seats = {} #sock:seat_number pairs; the current players
+        self.hands = {} #sock:BlackjackHand pairs, plus one 'dealer':BlackjackHand
+        self.insu = {} #The amount of insurance we owe everyone.
+        self.results = defaultdict(lambda : 0) #a dollar score for each player. 
+        #positive is a win, negative a tie 
+        self.deck = BlackjackDeck() 
+        self.lobby = deque() 
         self.state='waiting to start game'
         self.game_in_progress = False
-        self.split_hand = False
+        self.split_store = False #This is 
 
     def broadcast(self, msg):
         self.logger.debug('sending message: {}'.format(msg))
@@ -121,9 +123,19 @@ class BlackjackServer(object):
 
     def handle_join(self, sock, id_):
         #split this to a handle_join, midgame, and a handle_join
+        if id_ in [self.clients[client].id_ for client in self.clients]:
+            if sock == [client for client in self.clients if self.client[client].id_==id_][0]:
+                return self.scold(sock, "You've already joined!")
+            return self.scold(sock, "ID {} is already in use.".format(id_))
+        if id_[:6] == 'SERVER':
+            return self.scold(sock, '"SERVER" is a reserved name and cannot be used.')
+        if not (all(c in (string.ascii_letters + string.digits + ' ') for c in id_) and
+                id_[0] in string.ascii_letters):
+            self.logger.debug('invalid name : "{}"'.format(id_))
+            return self.scold(sock, "ID must be alphanumeric and start with a letter.")
         self.clients[sock].id_ = id_
         self.accounts[id_] = self.accounts.get(id_, 1000) #default to 1000
-        if not self.game_in_progress and len(self.occupied_seats) < 6:
+        if not self.game_in_progress and len(self.occupied_seats) < 6 and self.accounts[id_] > self.MIN_BET:
             location = 'tabl'
             empty_seat = self.empty_seat()
             self.occupied_seats[sock] = empty_seat
@@ -146,7 +158,7 @@ class BlackjackServer(object):
                 id_=self.clients[sock].id_,
                 text=text))
         else: #clients must tell us their name before they can chat
-            self.scold(sock,reason='You must send a JOIN before you can do anything else')
+            self.scold(sock,reason='You must first join with a player ID.')
     def handle_exit(self,sock):
         self.drop_client(sock,reason='They sent an exit')
 
@@ -189,9 +201,9 @@ class BlackjackServer(object):
                 if sock == self.server:
                     self.accept_client()
                 elif sock in self.lobby or sock in self.occupied_seats:
-                    self.process_message(sock, allowed_types=['chat','exit'])
+                    self.process_messages(sock, allowed_types=['chat','exit'])
                 else:
-                    self.process_message(sock, allowed_types=['join'])
+                    self.process_messages(sock, allowed_types=['join'])
         print('waiting for more players...')
         start = time()
         while time() - start < self.join_wait and self.occupied_seats and len(self.occupied_seats) < self.MAX_PLAYERS:
@@ -201,9 +213,9 @@ class BlackjackServer(object):
                 if sock == self.server:
                     self.accept_client()
                 elif sock in self.occupied_seats:
-                    self.process_message(sock, allowed_types=['chat','exit'])
+                    self.process_messages(sock, allowed_types=['chat','exit'])
                 else:
-                    self.process_message(sock, allowed_types=['join'])
+                    self.process_messages(sock, allowed_types=['join'])
 
     def get_antes(self):
         if not self.occupied_seats:
@@ -219,9 +231,9 @@ class BlackjackServer(object):
                 if sock == self.server:
                     self.accept_client()
                 elif sock in self.occupied_seats:
-                    self.process_message(sock,['chat','exit','ante'])
+                    self.process_messages(sock,['chat','exit','ante'])
                 else:
-                    self.process_message(sock,['join','chat','exit'])
+                    self.process_messages(sock,['join','chat','exit'])
         for no_ante_player in (set(self.occupied_seats.keys()) - set(self.bets.keys())):
             self.drop_client(no_ante_player)
 
@@ -264,9 +276,9 @@ class BlackjackServer(object):
                 if sock == self.server:
                     self.accept_client()
                 elif sock in self.occupied_seats:
-                    self.process_message(sock,['chat','exit','insu'])
+                    self.process_messages(sock,['chat','exit','insu'])
                 else:
-                    self.process_message(sock,['join','chat','exit'])
+                    self.process_messages(sock,['join','chat','exit'])
         for no_insu_player in (set(self.occupied_seats.keys()) - set(self.insu.keys())):
             self.drop_client(no_insu_player, 'timeout waiting for insu')
 
@@ -279,7 +291,7 @@ class BlackjackServer(object):
         self.player_done = False
         for player in sorted(self.occupied_seats, key=lambda p: self.occupied_seats[p]):
             self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
-            self.split_hand = False
+            self.split_store = False
             while not self.player_done and player in self.occupied_seats:
                 start = time()
                 self.player_moved = False
@@ -290,9 +302,9 @@ class BlackjackServer(object):
                         if sock == self.server:
                             self.accept_client()
                         elif sock == player:
-                            self.process_message(player,['chat','exit','turn'])
+                            self.process_messages(player,['chat','exit','turn'])
                         else:
-                            self.process_message(sock, ['join','chat','exit'])
+                            self.process_messages(sock, ['join','chat','exit'])
                 if not self.player_moved:
                     self.drop_client(player, 'timeout waiting for turn')
         #disclose dealer moves here:
@@ -337,7 +349,11 @@ class BlackjackServer(object):
                 'splt':self.action_split
             }
         self.player_moved = True
-        action_handlers[action](sock)
+        if action in action_handlers:
+            return action_handlers[action](sock)
+        else:
+            return self.scold(sock, 'Invalid action. Valid actions are hitt, stay, down, or splt.')
+
 
     def action_hitt(self,player):
         new_card = self.deck.deal(1)[0]
@@ -356,6 +372,7 @@ class BlackjackServer(object):
         if hand_value >= 21:
             self.player_done = True
             self.evaluate_hand(player)
+        return True
 
     def evaluate_hand(self,player):
         hand_value = self.hands[player].value()
@@ -365,19 +382,23 @@ class BlackjackServer(object):
 
         if hand_value > 21 or (dealer_hand <= 21 and dealer_hand > hand_value): #lose!
             self.results[player_id] -= self.bets[player]
-            self.logger.debug('Lose')
+            self.logger.debug('{} lost'.format(player_id))
+        elif hand_value == 21 and dealer_hand != 21:
+            self.results[player_id] += 2.5*self.bets[player]
+            #from spec: "If a player gets a blackjack (and beat the dealer) they win 1.5x their initial bet in addition to their initial bet"
+            self.logger.debug('{} won'.format(player_id))
         elif hand_value > dealer_hand or dealer_hand > 21:
             self.results[player_id] += 2*self.bets[player]
-            self.logger.debug('win')
+            self.logger.debug('{} won'.format(player_id))
         else:#tie
-            self.logger.debug('tie')
+            self.logger.debug('{} tied'.format(player_id))
 
-        if self.split_hand:
+        if self.split_store:
             self.player_done = False
             self.logger.debug('player has finished the first half of a split turn.' + 
                     'their hand WAS {}'.format(self.hands[player].cards))
-            self.hands[player].cards = [self.split_hand]
-            self.split_hand = False
+            self.hands[player].cards = [self.split_store]
+            self.split_store = False
             self.logger.debug('now it is {}'.format(self.hands[player].cards))
             self.action_hitt(player)
             
@@ -388,13 +409,14 @@ class BlackjackServer(object):
                 bet=self.bets[player])
         self.broadcast(msg)
         self.evaluate_hand(player)
+        return True
 
     def action_down(self,player):
-        if len(self.hands[player].cards) > 2 or self.split_hand:
-            return self.scold(player, 'You may only double down on your first turn')
+        if len(self.hands[player].cards) > 2 or self.split_store:
+            return self.scold(player, 'Cannot "double" after first turn.')
         player_id = self.clients[player].id_
         if self.accounts[player_id] < self.bets[player]:
-            return self.scold(player, "You don't have enough money to double down!")
+            return self.scold(player, "You don't have enough cash to double down")
 
         new_card = self.deck.deal(1)[0]
         self.hands[player].cards.append(new_card)
@@ -413,12 +435,16 @@ class BlackjackServer(object):
         self.broadcast(msg)
         self.player_done = True
         self.evaluate_hand(player)
+        return True
 
     def action_split(self,player):
-        if len(self.hands[player].cards) > 2 or self.split_hand:
-            return self.scold(player, 'You may only split on your first turn') 
+        if len(self.hands[player].cards) > 2 or self.split_store:
+            return self.scold(player, 'Cannot "split" after first turn.') 
+        if self.hands[player].cards[0][0] != self.hands[player].cards[1][0]:
+            return self.scold(player, 'Card values must be equal to split.')
+
         player_id = self.clients[player].id_
-        self.split_hand = self.hands[player].cards[1]
+        self.split_store = self.hands[player].cards[1]
         new_card = self.deck.deal(1)[0]
         self.hands[player].cards[1] = new_card
         msg = '[stat|{id_}|splt|{card}|bustn|{bet}]'.format(
@@ -426,6 +452,7 @@ class BlackjackServer(object):
             card = new_card,
             bet = self.bets[player])
         self.broadcast(msg)
+        return True
 
 
 
@@ -464,24 +491,21 @@ class BlackjackServer(object):
         try:
             amount = int(amount)
         except:
-            self.scold(sock, "That's not a number!")
-            return
+            return self.scold(sock, "That's not a number!")
         if amount > self.bets[sock]/2:
-            self.scold(sock, 'Insurance must be no more than half your bet, rounded down. '
-                    + 'You bet ${} and asked for ${} insurance'.format(
-                        self.bets[sock], amount))
-            return
+            return self.scold(sock, "Amount must be an integer, no more than half your bet, and less than or equal to your cash.")
         player_id = self.clients[sock].id_
         if amount > self.accounts[player_id]:
-            self.scold(sock, "You don't have enough money to buy that much insurance")
-            return
+            return self.scold(sock, "You don't have enough money to buy that much insurance")
         self.accounts[player_id] -= amount
-        if len(self.hand['dealer'].cards) == 2 and self.hands['dealer'].value() == 21:
+        if len(self.hands['dealer'].cards) == 2 and self.hands['dealer'].value() == 21:
             #this is the amount we will pay that player in insurance
             self.insu[sock] = 2*amount
         else:
             self.insu[sock] = 0
-    def process_message(self, sock, allowed_types):
+        return True
+
+    def process_messages(self, sock, allowed_types):
         try:
             self.clients[sock].mbuffer.update()
             message_queue = self.clients[sock].mbuffer.messages
@@ -489,9 +513,8 @@ class BlackjackServer(object):
                 m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
                 if m_type in allowed_types:
                     try:
-                        self.m_handlers[m_type](sock, *mess_args)
-                        if sock in self.clients:
-                            self.clients[sock].strikes = 0  #all sins are forgiven
+                        if self.m_handlers[m_type](sock, *mess_args):
+                            self.forgive(sock)
                     except Exception as e:
                         self.logger.error('tried to process message {}|{} and hit exception:\n{}'.format(m_type, mess_args, traceback.format_exc()))
                 else:
@@ -502,13 +525,17 @@ class BlackjackServer(object):
 
         
     def handle_ante(self, sock, amount):
-        amount = int(amount)
-        if amount < self.MIN_BET:
-            self.scold(sock, 'The minimum ante is {}. You gave {}'.format(
-                self.MIN_BET, amount))
+        try:
+            amount = int(amount)
+        except ValueError:
+            return self.scold(sock, "amount must be an integer, at least {}, and less than or equal to your cash.".format(self.MIN_BET))
+        if amount < self.MIN_BET or amount > self.accounts[self.clients[sock].id_]:
+            return self.scold(sock, "amount must be an integer, at least {}, and less than or equal to your cash.".format(self.MIN_BET))
+
         self.bets[sock] = amount
         self.accounts[self.clients[sock].id_] -= amount
         #take the money right away. pay up if they win.
+        return True
 
     def serve(self):
         while True:
@@ -524,6 +551,20 @@ class BlackjackServer(object):
             if self.game_in_progress:
                 self.drop_game()
 
+    def remove_from_game(self,player):
+        self.logger.debug('moving player {} from game to lobby'.format(
+            self.clients[player].id_))
+        for d in [self.occupied_seats, self.bets, self.hands, self.insu, self.results]:
+            if player in d:
+                del d[player]
+        self.broadcast('[join|{id_}|{timeout}|{cash}|0]'.format(
+                id_=self.clients[player].id_,
+                timeout=self.timeout,
+                cash=self.accounts[self.clients[player].id_]))
+
+    def forgive(self, player):
+        self.clients[player].strikes = 0
+
     def drop_game(self):
         self.game_in_progress = False
         self.logger.info('starting a new game...')
@@ -531,9 +572,17 @@ class BlackjackServer(object):
         self.hands = {}
         self.insu = {}
         self.results = defaultdict(lambda : 0)
-        self.split_hand = False
+        self.split_store = False
+        for player in self.occupied_seats:
+            if self.accounts[self.clients[player].id_] < self.MIN_BET:
+                #this player can't afford to play, but they could still watch
+                self.remove_from_game(player)
+
         while len(self.occupied_seats) < self.MAX_PLAYERS and len(self.lobby) > 0:
             new_player = self.lobby.popleft()
+            if self.accounts[self.clients[new_player].id_] < self.MIN_BET:
+                #This player can't afford to play, but they could still watch.
+                continue
             seat_num = self.empty_seat()
             self.occupied_seats[new_player] = seat_num
             self.broadcast('[join|{id_}|{timeout}|{cash}|{seat_num}]'.format(
@@ -555,6 +604,8 @@ class BlackjackServer(object):
         except Exception as e:
             self.logger.debug(traceback.format_exc())
             self.drop_client(sock)
+        finally:
+            return False
  
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

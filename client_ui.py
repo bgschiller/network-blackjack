@@ -1,7 +1,8 @@
 import sys
 import random
 import pickle
-from utils import escape_chars, colors
+from collections import defaultdict
+from utils import escape_chars, colors,BlackjackHand,validate_name
 
 class ConsoleUI(object):
 
@@ -23,8 +24,7 @@ class ConsoleUI(object):
 
     def get_player_name(self):
         name = raw_input(colors.OKBLUE + 'What is your name? ' + colors.ENDC).translate(None, '[]|,\n')
-        self.name = '{:<12}'.format(name)
-        return name if len(name) <= 12 else name[:12]
+        return validate_name(name)
 
     def send_chat(self):
         chat_line = sys.stdin.readline().strip('\r\n')
@@ -143,5 +143,178 @@ class AutoUI(ConsoleUI):
         else:
             action = 'stay'
         print colors.OKBLUE + "It's your turn! you have {}".format(my_hand.value()) + colors.ENDC, action
+        self.first_turn = False
         return action
         
+class IntelligentUI(AutoUI):
+    possible_names = ['NonTrivialAI']
+    split_strategies = { #doubled_card:{dealer_card:action}
+            '1':defaultdict(lambda: 'splt'),
+            '2':defaultdict(lambda: 'hitt', {
+                '4':'splt',
+                '5':'splt',
+                '6':'splt',
+                '7':'splt'}),
+            '3':defaultdict(lambda: 'hitt', {
+                '4':'splt',
+                '5':'splt',
+                '6':'splt',
+                '7':'splt'}),
+            '4':defaultdict(lambda: 'hitt'),
+            '6':defaultdict(lambda: 'splt',{
+                '7':'hitt',
+                '8':'hitt',
+                '9':'hitt',
+                'T':'hitt',
+                '1':'hitt'}),
+            '7':defaultdict(lambda: 'splt',{
+                '8':'hitt',
+                '9':'hitt',
+                'T':'hitt',
+                '1':'hitt'}),
+            '8':defaultdict(lambda: 'splt'),
+            '9':defaultdict(lambda: 'splt',{
+                '7':'stay',
+                'T':'stay',
+                '1':'stay'}),
+            }
+    ace_present_strategies = {#othercardsum:{dealer_card:action}
+            2:defaultdict(lambda:'hitt', {
+                '5':'down',
+                '6':'down'}),
+            3:defaultdict(lambda:'hitt',{
+                '4':'down',
+                '5':'down',
+                '6':'down'}),
+            4:defaultdict(lambda:'hitt',{
+                '4':'down',
+                '5':'down',
+                '6':'down'}),
+            5:defaultdict(lambda:'hitt',{
+                '4':'down',
+                '5':'down',
+                '6':'down'}),
+            6:defaultdict(lambda:'hitt',{
+                '3':'down',
+                '4':'down',
+                '5':'down',
+                '6':'down'}),
+            7:defaultdict(lambda:'down',{
+                '7':'stay',
+                '8':'stay',
+                '9':'hitt',
+                'T':'hitt'}),
+            8:defaultdict(lambda:'stay',{
+                '6':'down'}),
+            9:defaultdict(lambda: 'stay'),
+            10:defaultdict(lambda: 'stay')
+            }
+    general_strategies = {#cardsum:{dealer_card:action}
+            4:defaultdict(lambda: 'hitt'),
+            5:defaultdict(lambda: 'hitt'),
+            6:defaultdict(lambda: 'hitt'),
+            7:defaultdict(lambda: 'hitt'),
+            8:defaultdict(lambda: 'hitt'),
+            9:defaultdict(lambda: 'down',{
+                '7':'hitt',
+                '8':'hitt',
+                '9':'hitt',
+                'T':'hitt',
+                '1':'hitt'}),
+            10:defaultdict(lambda: 'down',{
+                'T':'hitt',
+                '1':'hitt'}),
+            11:defaultdict(lambda: 'down'),
+            12:defaultdict(lambda: 'hitt',{
+                '4':'stay',
+                '5':'stay',
+                '6':'stay'}),
+            13:defaultdict(lambda: 'stay',{
+                '7':'hitt',
+                '8':'hitt',
+                '9':'hitt',
+                'T':'hitt',
+                '1':'hitt'}),
+            14:defaultdict(lambda: 'stay',{
+                '7':'hitt',
+                '8':'hitt',
+                '9':'hitt',
+                'T':'hitt',
+                '1':'hitt'}),
+            15:defaultdict(lambda: 'stay',{
+                '7':'hitt',
+                '8':'hitt',
+                '9':'hitt',
+                'T':'hitt',
+                '1':'hitt'}),
+            16:defaultdict(lambda: 'stay',{
+                '7':'hitt',
+                '8':'hitt',
+                '9':'hitt',
+                'T':'hitt',
+                '1':'hitt'}),
+            17:defaultdict(lambda:'stay'),
+            18:defaultdict(lambda:'stay'),
+            19:defaultdict(lambda:'stay'),
+            20:defaultdict(lambda:'stay'),
+            21:defaultdict(lambda:'stay')
+        }
+
+
+    def __init__(self, *args, **kwargs):
+        AutoUI.__init__(self, *args, **kwargs)
+         
+    def strategy(self, dealer_card, my_hand):
+        my_hand = BlackjackHand(my_hand.cards) #make a local copy
+        #replace J,Q,K with their value
+        if dealer_card in ['J','Q','K']:
+            dealer_card = 'T'
+        if self.first_turn and my_hand.cards[0][0] == my_hand.cards[1][0]:
+            #possible split
+            if my_hand.cards[0][0] in self.split_strategies:
+                return self.split_strategies[my_hand.cards[0][0]][dealer_card]
+
+        for ix, card in enumerate(my_hand.cards):
+            if card[0] in ['J','Q','K']:
+                my_hand.cards[ix] = 'T' + card[1]
+
+
+        if '1' in [card[0] for card in my_hand.cards]:
+            #ace is present
+            other_cards = sum(map(int,
+                map(lambda c: '10' if c=='T' else c,
+                    filter(lambda c: c != '1', 
+                        map(lambda c: c[0], my_hand.cards)))))
+            if other_cards in self.ace_present_strategies :
+                preference = self.ace_present_strategies[other_cards][dealer_card]
+                if not self.first_turn and preference == 'down':
+                    return 'stay' if other_cards >= 7 else 'hitt'
+                return preference
+        card_sum = sum(map(int,
+            map(lambda c: '10' if c=='T' else c,
+                map(lambda c: c[0], my_hand.cards))))
+        if card_sum in self.general_strategies:
+            preference = self.general_strategies[card_sum][dealer_card]
+            if not self.first_turn and preference == 'down':
+                return 'hitt'
+            return preference
+        else:
+            print colors.FAIL + "I don't know what to do!!!"
+            print 'my_hand={}'.format(my_hand)
+            print 'dealer_card={}'.format(dealer_card)
+            print colors.ENDC
+            return 'stay'
+
+    def get_insurance(self):
+        print colors.OKBLUE + 'What insurance would you like?' + colors.ENDC, 0
+        return 0
+
+    def get_turn_action(self):
+        my_hand = self.players[self.name].hand
+        dealer_card = self.players['SERVER      '].hand.cards[0][0]
+        action = self.strategy(dealer_card, my_hand)
+        print colors.OKBLUE + "It's your turn! you have {}".format(my_hand.value()) + colors.ENDC, action
+        self.first_turn = False
+        return action
+  
+

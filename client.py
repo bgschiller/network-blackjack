@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import socket as s
-from utils import MessageBuffer, ChatHandler, BlackjackHand, BlackjackPlayer, escape_chars, colors
-from client_ui import ConsoleUI, AutoUI
+from utils import MessageBuffer, ChatHandler, BlackjackHand, BlackjackPlayer, escape_chars, colors, validate_name
+from client_ui import ConsoleUI, AutoUI, IntelligentUI
 from select import select
 from collections import defaultdict
 import sys
@@ -20,13 +20,9 @@ class BlackjackClient(object):
         self.ui = ui(self.send_chat)
 
         if name is None:
-            self.name = self.ui.get_player_name()
-            self.name = '{:<12}'.format(self.name)
-            if len(self.name) > 12:
-                self.name = self.name[:12]
+            self.name = validate_name(self.ui.get_player_name())
         else:
-            self.name = name
-            self.ui.name = name 
+            self.name = validate_name(name)
 
 
         self.m_handlers = defaultdict(lambda: self.handle_default)
@@ -257,7 +253,8 @@ if __name__=='__main__':
             dest='ui')
     ui_map = {
             'console':ConsoleUI,
-            'auto':AutoUI
+            'auto':AutoUI,
+            'intelligent':IntelligentUI
             }
     try:
         args = vars(parser.parse_args())
