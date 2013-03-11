@@ -14,7 +14,7 @@ class ConsoleUI(object):
         to watch sys.stdin for us and then call send_chat. ugly.)'''
         self.chat_callback = send_chat_msg
         self.chat_at_stdin = True
-        self.name = name
+        self.name = None if name is None else validate_name(name)
         self.players = {}
 
     def show_chat(self, id_, text):
@@ -24,7 +24,8 @@ class ConsoleUI(object):
 
     def get_player_name(self):
         name = raw_input(colors.OKBLUE + 'What is your name? ' + colors.ENDC).translate(None, '[]|,\n')
-        return validate_name(name)
+        self.name = validate_name(name)
+        return self.name
 
     def send_chat(self):
         chat_line = sys.stdin.readline().strip('\r\n')
@@ -56,9 +57,14 @@ class ConsoleUI(object):
         self.bet = 0
         min_bet = int(min_bet)
         while self.bet < min_bet:
-            self.bet = int(raw_input(colors.OKBLUE + 'What is your bet? (min {})'.format(min_bet) + colors.ENDC))
-            if self.bet < min_bet:
-                print (colors.FAIL + 'That bet is too small.' + colors.ENDC)
+            try:
+                self.bet = int(raw_input(colors.OKBLUE + 'What is your bet? (min {})'.format(min_bet) + colors.ENDC))
+                if self.bet < min_bet:
+                    print (colors.FAIL + 'That bet is too small.' + colors.ENDC)
+
+            except:
+                print( colors.FAIL + "That's not a number!" + colors.ENDC)
+                self.bet = 0
         return self.bet
 
     def deal(self, shuf):
@@ -72,10 +78,13 @@ class ConsoleUI(object):
                 name=name,
                 cash=self.players[name].cash,
                 cards=self.players[name].hand.cards) + colors.ENDC)
+
     def get_turn_action(self):
         valid_moves = ['hitt','stay','down','splt']
+        print('players is {}'.format(self.players))
+        print('self.name is {}'.format(self.name))
         print( colors.OKBLUE + "It's your turn! You have {} choose one of {}".format(
-            self.players['{:<12}'.format(self.name)].hand.value(),
+            self.players[self.name].hand.value(),
             valid_moves) + colors.ENDC)
         action = None
         while action not in valid_moves:
