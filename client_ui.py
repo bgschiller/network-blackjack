@@ -1,6 +1,7 @@
 import sys
 import random
 import pickle
+import strategy
 from collections import defaultdict
 from utils import escape_chars, colors,BlackjackHand,validate_name
 
@@ -131,9 +132,8 @@ class AutoUI(ConsoleUI):
     
     def get_ante(self, min_bet):
         min_bet = int(min_bet)
-        self.bet = random.randint(min_bet, min_bet*4)
-        print colors.OKBLUE + 'What is your bet? (min {})'.format(min_bet) + colors.ENDC, self.bet
-        return self.bet
+        print colors.OKBLUE + 'What is your bet? (min {})'.format(min_bet) + colors.ENDC, min_bet
+        return min_bet
 
     def get_turn_action(self):
         my_hand = self.players[self.name].hand
@@ -263,6 +263,9 @@ class IntelligentUI(AutoUI):
 
     def __init__(self, *args, **kwargs):
         AutoUI.__init__(self, *args, **kwargs)
+        self.split_strategies = strategy.split_strategies
+        self.ace_present_strategies =strategy.ace_present_strategies
+        self.general_strategies = strategy.general_strategies
          
     def strategy(self, dealer_card, my_hand):
         my_hand = BlackjackHand(my_hand.cards) #make a local copy
