@@ -2,7 +2,7 @@
 import socket as s
 import traceback
 from select import select
-from utils import MessageBuffer, MessageBufferException, ChatHandler, BlackjackDeck, BlackjackHand, BlackjackError, escape_chars, colors
+from utils import MessageBuffer, MessageBufferException, ChatHandler, BlackjackDeck, BlackjackHand, BlackjackError, escape_chars, colors, validate_name
 from collections import deque, defaultdict
 from time import time
 import signal
@@ -29,6 +29,7 @@ class BlackjackServer(object):
         self.MAX_PLAYERS = 6
         self.MIN_BET = 4
         self.MAX_STRIKES = 3
+        self.MAX_CHAT_LEN = 450
 
         self.host = ''
         self.port = port
@@ -126,6 +127,8 @@ class BlackjackServer(object):
             {seat for sock,seat in self.occupied_seats.iteritems() }))
 
     def handle_join(self, sock, id_):
+        if id_ != validate_name(id_):
+            return self.scold(sock, 'Id must be twelve characters long, right padded with spaces if necessary. You gave "{name}", try "{name:<12}"'.format(name=id_))
         #split this to a handle_join, midgame, and a handle_join
         if id_ in [self.clients[client].id_ for client in self.clients]:
             if sock == [client for client in self.clients if self.client[client].id_==id_][0]:
@@ -157,12 +160,16 @@ class BlackjackServer(object):
             self.drop_client(sock)
 
     def handle_chat(self, sock, text):
-        if self.clients[sock]: 
+        if len(text)> self.MAX_CHAT_LEN:
+            return self.scold(sock, reason="Chat message too long. Must be {} characters or less.".format(self.MAX_CHAT_LEN))
+        if self.clients[sock].id_: 
             self.broadcast('[chat|{id_}|{text}]'.format(
                 id_=self.clients[sock].id_,
                 text=text))
+            return True
         else: #clients must tell us their name before they can chat
-            self.scold(sock,reason='You must first join with a player ID.')
+            return self.scold(sock,reason='You must first join with a player ID.')
+        
     def handle_exit(self,sock):
         self.drop_client(sock,reason='They sent an exit')
 
@@ -187,7 +194,6 @@ class BlackjackServer(object):
             client.close()
         self.server.close()
         with open('blackjack_accounts','w') as account_f:
-            #we have to cast to dict because defaultdict cannot be pickled.
             json.dump(self.accounts,account_f)
         exit(0)
 
@@ -294,9 +300,9 @@ class BlackjackServer(object):
 
         self.player_done = False
         for player in sorted(self.occupied_seats, key=lambda p: self.occupied_seats[p]):
-            self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
             self.split_store = False
             while not self.player_done and player in self.occupied_seats:
+                self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
                 start = time()
                 self.player_moved = False
                 while time() - start < self.timeout and not self.player_moved and player in self.occupied_seats:
@@ -519,11 +525,13 @@ class BlackjackServer(object):
                     try:
                         if self.m_handlers[m_type](sock, *mess_args):
                             self.forgive(sock)
+                    except TypeError:
+                        self.scold(sock, "Too many pipes!")
                     except Exception as e:
                         self.logger.error('tried to process message {}|{} and hit exception:\n{}'.format(m_type, mess_args, traceback.format_exc()))
                 else:
                     self.scold(sock, 'Only {} are valid commands while state is {}'.format(allowed_types, self.state) +
-                            'You sent a "{}"'.format(m_type))
+                            ' You sent a "{}"'.format(m_type))
         except MessageBufferException:
             self.drop_client(sock, reason='socket is closed')
 

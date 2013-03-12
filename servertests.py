@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import string
 import pexpect
 import sys

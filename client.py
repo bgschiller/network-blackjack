@@ -73,6 +73,11 @@ class BlackjackClient(object):
         self.game_in_progress = False
         self.players = False
         self.location='lobby'
+
+    def send(self, msg):
+        self.logger.debug('sending out {}'.format(msg))
+        self.server.sendall(msg)
+
     def process_messages(self, expected_types):
         self.s_buffer.update()
         while self.s_buffer.messages:
@@ -85,7 +90,7 @@ class BlackjackClient(object):
 
 
     def exit(self,signum=None, frame=None, ret_code=0):
-        self.server.sendall('[exit]')
+        self.send('[exit]')
         exit(ret_code)
     def handle_default(self, *args):
         self.logger.error('uknown message, args: {}'.format(args))
@@ -99,7 +104,7 @@ class BlackjackClient(object):
     def handle_ante(self, min_bet):
         self.game_in_progress = True
         ante = self.ui.get_ante(min_bet)
-        self.server.sendall('[ante|{:0>10}]'.format(ante))
+        self.send('[ante|{:0>10}]'.format(ante))
 
     def handle_deal(self, dealer_card, shuf, *player_info):
         self.players = {}
@@ -130,7 +135,7 @@ class BlackjackClient(object):
     def handle_turn(self, name):
         if name == self.name:
             action = self.ui.get_turn_action()
-            self.server.sendall('[turn|{}]'.format(action))
+            self.send('[turn|{}]'.format(action))
             #we need to do ALL the turns here
         else:
             self.ui.display_turn(name)
@@ -147,8 +152,6 @@ class BlackjackClient(object):
             if self.players[id].split_store:
                 self.players[id].hand.cards = [self.players[id].split_store]
                 self.players[id].split_store = False
-        else: #still their turn
-            self.handle_turn(id)
 
 
     def handle_endg(self, *player_info):
@@ -183,7 +186,7 @@ class BlackjackClient(object):
 
     def join(self):
         self.server.connect((self.host,self.port))
-        self.server.sendall('[join|{_id:<12}]'.format(_id=self.name))
+        self.send('[join|{_id:<12}]'.format(_id=self.name))
         self.s_buffer=MessageBuffer(self.server)
 
     def wait_for_ante(self):
@@ -208,7 +211,7 @@ class BlackjackClient(object):
         if self.players['SERVER      '].hand.value() == 11:
             #we have to opportunity to buy insurance
             amount = self.ui.get_insurance()
-            self.server.sendall('[insu|{:0>10}]'.format(amount))
+            self.send('[insu|{:0>10}]'.format(amount))
 
     def play_out_turns(self):
         self.logger.debug('top of play_out_turns')
