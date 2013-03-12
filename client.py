@@ -9,6 +9,8 @@ import signal
 import argparse
 import logging
 
+
+
 class BlackjackClient(object):
 
     MAX_PLAYERS = 6
@@ -33,7 +35,7 @@ class BlackjackClient(object):
         self.m_handlers['turn'] = self.handle_turn
         self.m_handlers['stat'] = self.handle_stat
         self.m_handlers['endg'] = self.handle_endg
-
+        self.all_messages = self.m_handlers.keys()
         self.server = s.socket(s.AF_INET, s.SOCK_STREAM)
         
         self.watched_socks = [self.server]
@@ -70,12 +72,12 @@ class BlackjackClient(object):
         self.logger.addHandler(c_handler)
         self.game_in_progress = False
         self.players = False
-
+        self.location='lobby'
     def process_messages(self, expected_types):
         self.s_buffer.update()
         while self.s_buffer.messages:
             m_type, mess_args = self.s_buffer.messages.popleft()
-            if m_type in expected_types:
+            if m_type in expected_types: 
                 self.m_handlers[m_type](*mess_args)
             else:
                 self.logger.error('Unexpected message: {} with args {}'.format(m_type, mess_args))
@@ -91,6 +93,7 @@ class BlackjackClient(object):
     def handle_join(self, id, timeout,cash, seat_number):
         self.timeout = timeout
         self.cash = cash
+        self.location = 'lobby' if seat_number==0 else 'table'
         self.ui.new_join(id, timeout, cash, seat_number)
 
     def handle_ante(self, min_bet):
@@ -109,6 +112,7 @@ class BlackjackClient(object):
         for ix, info in enumerate(player_info):
             if info:
                 id_, cash, card1, card2 = info.split(',')
+                self.logger.debug('adding "{}" to players'.format(id_))
                 self.players[id_] = BlackjackPlayer(
                         id=id_,
                         cards = [card1,card2],
@@ -169,6 +173,7 @@ class BlackjackClient(object):
     def drop_game(self):
         self.players = {}
         self.seat_to_name = []
+        self.game_in_progress = False
 
     def send_chat(self, chat_line):
         '''callback function for ui'''
@@ -182,15 +187,17 @@ class BlackjackClient(object):
         self.s_buffer=MessageBuffer(self.server)
 
     def wait_for_ante(self):
+        self.logger.debug('top of wait_for_ante')
         while not self.game_in_progress:
             input_socks, _, _ = select(self.watched_socks, [], [])
             for stream in input_socks:
                 if stream == self.server:
-                    self.process_messages(['chat','exit','join','ante'])
+                    self.process_messages(['chat','exit','join','ante','deal'])
                 else:
                     self.ui.send_chat()
 
     def wait_for_deal(self):
+        self.logger.debug('top of wait_for_deal')
         while not self.players:
             input_socks, _, _ = select(self.watched_socks, [], [])
             for stream in input_socks:
@@ -204,6 +211,7 @@ class BlackjackClient(object):
             self.server.sendall('[insu|{:0>10}]'.format(amount))
 
     def play_out_turns(self):
+        self.logger.debug('top of play_out_turns')
         while self.game_in_progress:
             input_socks, _, _ = select(self.watched_socks, [], [])
             for stream in input_socks:
@@ -212,9 +220,20 @@ class BlackjackClient(object):
                 else:
                     self.ui.send_chat()
         
+    def wait_to_play(self):
+        self.logger.debug('top of wait_to_play')
+        while self.location == 'lobby':
+            input_socks, _,_ = select(self.watched_socks, [], [])
+            for stream in input_socks:
+                if stream == self.server:
+                    self.process_messages(self.all_messages)
+                else:
+                    self.ui.send_chat()
 
     def main(self):
         self.join()
+        self.wait_to_play()
+        self.logger.debug('game is starting!')
         while True:
             self.wait_for_ante()
             self.wait_for_deal()

@@ -111,9 +111,13 @@ class BlackjackServer(object):
 
     def broadcast(self, msg):
         self.logger.debug('sending message: {}'.format(msg))
-        for client in self.clients.keys():
+        clients = self.clients.keys()
+        for client in clients:
             try:
-                client.sendall(msg)
+                if client in clients:
+                    client.sendall(msg)
+                else:
+                    self.logger.debug('static iteration on a dynamic list')
             except Exception as e:
                 self.logger.debug(traceback.format_exc())
                 self.drop_client(client)
@@ -174,7 +178,7 @@ class BlackjackServer(object):
         if sock in self.clients:
             del self.clients[sock]
             self.broadcast('[exit|{id_}]'.format(id_=save_id))
-            self.logger.info('dropping {}, id: {} because: {}'.format(sock, save_id, reason if reason is not None else '(no reason given)'))
+        self.logger.info('dropping {}, id: {} because: {}'.format(sock, save_id, reason if reason is not None else '(no reason given)'))
         if sock in self.watched_socks:
             self.watched_socks.remove(sock)
         if sock in self.occupied_seats:
