@@ -62,7 +62,7 @@ class ConsoleUI(object):
                 if self.bet < min_bet:
                     print (colors.FAIL + 'That bet is too small.' + colors.ENDC)
 
-            except:
+            except ValueError:
                 print( colors.FAIL + "That's not a number!" + colors.ENDC)
                 self.bet = 0
         return self.bet

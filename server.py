@@ -99,14 +99,14 @@ class BlackjackServer(object):
         self.bets = {} #sock:ante pairs. These are updated for a split or down
         self.occupied_seats = {} #sock:seat_number pairs; the current players
         self.hands = {} #sock:BlackjackHand pairs, plus one 'dealer':BlackjackHand
-        self.insu = {} #The amount of insurance we owe everyone.
+        self.insu = defaultdict(lambda: 0) #The amount of insurance we owe everyone.
         self.results = defaultdict(lambda : 0) #a dollar score for each player. 
         #positive is a win, negative a tie 
         self.deck = BlackjackDeck() 
         self.lobby = deque() 
         self.state='waiting to start game'
         self.game_in_progress = False
-        self.split_store = False #This is 
+        self.split_store = False 
 
     def broadcast(self, msg):
         self.logger.debug('sending message: {}'.format(msg))
