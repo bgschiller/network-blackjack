@@ -59,17 +59,15 @@ class BlackjackServer(object):
         self.logger = logging.getLogger('blackjack')
         self.logger.setLevel(logging.DEBUG)
 
-        # create file handler which logs even debug messages
         fh = logging.FileHandler('server.log')
         fh.setLevel(logging.DEBUG)
-        # create console handler with a higher log level
         ch = logging.StreamHandler()
         ch.setLevel(logging.DEBUG)
         # create formatter and add it to the handlers
         format_style = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         formatter = logging.Formatter(colors.DIM + format_style + colors.ENDC)
         formatter_no_color = logging.Formatter(format_style)
-        fh.setFormatter(formatter)
+        fh.setFormatter(formatter_no_color)
         ch.setFormatter(formatter)
         # add the handlers to the logger
         self.logger.addHandler(fh)
@@ -120,7 +118,7 @@ class BlackjackServer(object):
                     self.logger.debug('static iteration on a dynamic list')
             except Exception as e:
                 self.logger.debug(traceback.format_exc())
-                self.drop_client(client)
+                self.drop_client(client, reason='here in broadcast, sock appears to be closed')
 
     def empty_seat(self):
         return min(set(range(1,self.MAX_PLAYERS + 1)).difference(
@@ -128,7 +126,7 @@ class BlackjackServer(object):
 
     def handle_join(self, sock, id_):
         if id_ != validate_name(id_):
-            return self.scold(sock, 'Id must be twelve characters long, right padded with spaces if necessary. You gave "{name}", try "{name:<12}"'.format(name=id_))
+            return self.scold(sock, 'Id must be twelve characters long, right padded with spaces if necessary. You gave "{name}", try "{name:<12}"'.format(name=id_), fatal=True)
         #split this to a handle_join, midgame, and a handle_join
         if id_ in [self.clients[client].id_ for client in self.clients]:
             if sock == [client for client in self.clients if self.client[client].id_==id_][0]:
@@ -149,15 +147,11 @@ class BlackjackServer(object):
         else:
             location = 'lbby'
             self.lobby.append(sock)
-        try:
-            self.broadcast('[join|{id_}|{timeout}|{cash:0>10}|{seat}]'.format(
-                id_=id_,
-                timeout=self.timeout,
-                cash=self.accounts[id_],
-                seat=0 if sock not in self.occupied_seats else self.occupied_seats[sock]))
-        except Exception as e:
-            self.logger.debug(traceback.format_exc())
-            self.drop_client(sock)
+        self.broadcast('[join|{id_}|{timeout}|{cash:0>10}|{seat}]'.format(
+            id_=id_,
+            timeout=self.timeout,
+            cash=self.accounts[id_],
+            seat=0 if sock not in self.occupied_seats else self.occupied_seats[sock]))
 
     def handle_chat(self, sock, text):
         if len(text)> self.MAX_CHAT_LEN:
@@ -245,7 +239,7 @@ class BlackjackServer(object):
                 else:
                     self.process_messages(sock,['join','chat','exit'])
         for no_ante_player in (set(self.occupied_seats.keys()) - set(self.bets.keys())):
-            self.drop_client(no_ante_player)
+            self.drop_client(no_ante_player, reason='failed to send an ante')
 
     def deal(self, shuf=True):
         if not self.occupied_seats:
@@ -274,6 +268,13 @@ class BlackjackServer(object):
         self.broadcast('|'.join(msg))
         if self.hands['dealer'].cards[0][0] == '1': #dealer has ace showing
             self.wait_for_insurance()
+            if self.hands['dealer'].value() == 21:
+                #game can end now
+                for player in self.occupied_seats:
+                    self.evaluate_hand(player)
+                self.payout()
+                self.drop_game()
+
            
     def wait_for_insurance(self):
         self.state='waiting for insurace'
@@ -289,8 +290,6 @@ class BlackjackServer(object):
                     self.process_messages(sock,['chat','exit','insu'])
                 else:
                     self.process_messages(sock,['join','chat','exit'])
-        for no_insu_player in (set(self.occupied_seats.keys()) - set(self.insu.keys())):
-            self.drop_client(no_insu_player, 'timeout waiting for insu')
 
     def play_out_turns(self):
         if not self.occupied_seats:
@@ -323,7 +322,7 @@ class BlackjackServer(object):
 
     def play_dealer_turn(self):
         #send the stat message for the dealer's second card
-        dealer_moves = []
+        dealer_moves = ['[turn|SERVER      ]']
         msg = '[stat|SERVER      |{action}|{card}|{bust}|0000000000]'
         dealer_moves.append(msg.format(
                 action='hitt',
@@ -335,6 +334,7 @@ class BlackjackServer(object):
                 new_card = self.deck.deal(1)[0]
                 my_hand.cards.append(new_card)
                 val = my_hand.value()
+                dealer_moves.append('[turn|SERVER      ]')
                 dealer_moves.append(msg.format(
                     action='hitt',
                     card=new_card,
@@ -342,6 +342,7 @@ class BlackjackServer(object):
                 if val > 21:
                     break #bust!
             else:
+                dealer_moves.append('[turn|SERVER      ]')
                 dealer_moves.append(msg.format(
                     action='stay',
                     card='xx',
@@ -471,6 +472,7 @@ class BlackjackServer(object):
         #pay out insurance
         for sock in self.insu:
             player_id = self.clients[sock].id_
+            #insurance is already tripled.
             self.accounts[player_id] += self.insu[sock]
 
         for seat_num in range(1,self.MAX_PLAYERS + 1):
@@ -510,7 +512,7 @@ class BlackjackServer(object):
         self.accounts[player_id] -= amount
         if len(self.hands['dealer'].cards) == 2 and self.hands['dealer'].value() == 21:
             #this is the amount we will pay that player in insurance
-            self.insu[sock] = 2*amount
+            self.insu[sock] = 3*amount
         else:
             self.insu[sock] = 0
         return True
@@ -519,7 +521,7 @@ class BlackjackServer(object):
         try:
             self.clients[sock].mbuffer.update()
             message_queue = self.clients[sock].mbuffer.messages
-            while len(message_queue) > 0:
+            while len(message_queue) > 0 and sock in self.clients:
                 m_type, mess_args = self.clients[sock].mbuffer.messages.popleft()
                 if m_type in allowed_types:
                     try:
@@ -533,7 +535,7 @@ class BlackjackServer(object):
                     self.scold(sock, 'Only {} are valid commands while state is {}'.format(allowed_types, self.state) +
                             ' You sent a "{}"'.format(m_type))
         except MessageBufferException:
-            self.drop_client(sock, reason='socket is closed')
+            self.drop_client(sock, reason='here in process_messages. socket is closed')
 
         
     def handle_ante(self, sock, amount):
@@ -603,19 +605,21 @@ class BlackjackServer(object):
                 cash=self.accounts[self.clients[new_player].id_],
                 seat_num=seat_num))
             
-    def scold(self, sock, reason):
+    def scold(self, sock, reason, fatal=False):
         try:
             self.clients[sock].strikes += 1
             msg = '[errr|{strike}|{reason}]'.format(
                 strike=self.clients[sock].strikes,
                 reason=reason.translate(escape_chars))
-            self.logger.debug('sending {}'.format(msg))
+            self.logger.debug('sending {} (fatal error)'.format(msg))
             sock.sendall(msg)
             if self.clients[sock].strikes >= self.MAX_STRIKES:
-                self.drop_client(sock)
+                self.drop_client(sock, reason='too many strikes')
+            elif fatal:
+                self.drop_client(sock,reason='fatal error "{}"'.format(reason))
         except Exception as e:
             self.logger.debug(traceback.format_exc())
-            self.drop_client(sock)
+            self.drop_client(sock, reason='here in scold, sock appears to be closed')
         finally:
             return False
  
@@ -651,4 +655,10 @@ if __name__ == '__main__':
             dest='max_tcp')
 
     args = vars(parser.parse_args())
-    BlackjackServer(**args).serve()
+    while True:
+        try:
+            b= BlackjackServer(**args)
+            b.serve()
+        except:
+            b.logger.fatal(traceback.format_exc())
+        

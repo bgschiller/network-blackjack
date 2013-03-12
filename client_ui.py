@@ -142,6 +142,7 @@ class AutoUI(ConsoleUI):
     def get_ante(self, min_bet):
         min_bet = int(min_bet)
         print colors.OKBLUE + 'What is your bet? (min {})'.format(min_bet) + colors.ENDC, min_bet
+        self.bet = min_bet
         return min_bet
 
     def get_turn_action(self):
@@ -302,9 +303,7 @@ class IntelligentUI(AutoUI):
                 if not self.first_turn and preference == 'down':
                     return 'stay' if other_cards >= 7 else 'hitt'
                 return preference
-        card_sum = sum(map(int,
-            map(lambda c: '10' if c=='T' else c,
-                map(lambda c: c[0], my_hand.cards))))
+        card_sum = my_hand.value()
         if card_sum in self.general_strategies:
             preference = self.general_strategies[card_sum][dealer_card]
             if not self.first_turn and preference == 'down':

@@ -245,10 +245,9 @@ class BlackjackClient(object):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(
-        description='A client for the CSCI 367 network blackjack game', 
-        add_help=False)
+        description='A client for the CSCI 367 network blackjack game')
     parser.add_argument(
-            '-h','--host', 
+            '-s','--server', 
             default='', 
             help='the host where the server resides', 
             metavar='host', 
@@ -282,6 +281,5 @@ if __name__=='__main__':
         args = vars(parser.parse_args())
         args['ui'] = ui_map[args['ui']]
     except:
-        parser.print_help()
         exit(1) 
     BlackjackClient(**args).main()
