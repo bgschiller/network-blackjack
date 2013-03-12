@@ -300,9 +300,9 @@ class BlackjackServer(object):
 
         self.player_done = False
         for player in sorted(self.occupied_seats, key=lambda p: self.occupied_seats[p]):
-            self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
             self.split_store = False
             while not self.player_done and player in self.occupied_seats:
+                self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
                 start = time()
                 self.player_moved = False
                 while time() - start < self.timeout and not self.player_moved and player in self.occupied_seats:
