@@ -126,10 +126,10 @@ class BlackjackServer(object):
 
     def handle_join(self, sock, id_):
         if id_ != validate_name(id_):
-            return self.scold(sock, 'Id must be twelve characters long, right padded with spaces if necessary. You gave "{name}", try "{name:<12}"'.format(name=id_), fatal=True)
+            return self.scold(sock, 'Id must be twelve characters long, right padded with spaces if necessary. You gave "{name}", try "{name:<12}"'.format(name=id_))
         #split this to a handle_join, midgame, and a handle_join
         if id_ in [self.clients[client].id_ for client in self.clients]:
-            if sock == [client for client in self.clients if self.client[client].id_==id_][0]:
+            if sock == [client for client in self.clients if self.clients[client].id_==id_][0]:
                 return self.scold(sock, "You've already joined!")
             return self.scold(sock, "ID {} is already in use.".format(id_))
         if id_ == 'SERVER      ':
@@ -138,6 +138,9 @@ class BlackjackServer(object):
                 id_[0] in string.ascii_letters):
             self.logger.debug('invalid name : "{}"'.format(id_))
             return self.scold(sock, "ID must be alphanumeric and start with a letter.")
+        if sock not in self.clients:
+            return False #they've already left
+
         self.clients[sock].id_ = id_
         self.accounts[id_] = self.accounts.get(id_, 1000) #default to 1000
         if not self.game_in_progress and len(self.occupied_seats) < 6 and self.accounts[id_] > self.MIN_BET:
@@ -168,8 +171,9 @@ class BlackjackServer(object):
         self.drop_client(sock,reason='They sent an exit')
 
     def drop_client(self, sock, reason=None):
-        save_id = 'an unknown client' if not sock in self.clients else self.clients[sock].id_
+        save_id = 'an unknown client'
         if sock in self.clients:
+            save_id = self.clients[sock].id_
             del self.clients[sock]
             self.broadcast('[exit|{id_}]'.format(id_=save_id))
         self.logger.info('dropping {}, id: {} because: {}'.format(sock, save_id, reason if reason is not None else '(no reason given)'))
@@ -297,8 +301,8 @@ class BlackjackServer(object):
         dealer_moves = self.play_dealer_turn() #find out what the dealer will have at the end of the game
         #Now we can modify everyone's cash in situ, rather than waiting till the end.
 
-        self.player_done = False
         for player in sorted(self.occupied_seats, key=lambda p: self.occupied_seats[p]):
+            self.player_done = False
             self.split_store = False
             while not self.player_done and player in self.occupied_seats:
                 self.broadcast('[turn|{:<12}]'.format(self.clients[player].id_))
@@ -471,6 +475,8 @@ class BlackjackServer(object):
         msg = ['[endg']
         #pay out insurance
         for sock in self.insu:
+            if sock not in self.clients:
+                continue #if you leave, you lose
             player_id = self.clients[sock].id_
             #insurance is already tripled.
             self.accounts[player_id] += self.insu[sock]
@@ -484,13 +490,13 @@ class BlackjackServer(object):
             player_id = self.clients[player].id_
             player_val = self.results[player_id]
             if player_val > 0:
-                result = 'WON'
+                result = 'won'
                 self.accounts[player_id] += 2*self.bets[player]
             elif player_val < 0:
-                result = 'LOS'
+                result = 'los'
                 #we've already taken their money
             else:
-                result = 'TIE'
+                result = 'tie'
                 self.accounts[player_id] += self.bets[player]
             msg.append('{id_:<12},{result},{cash:0>10}'.format(
                 id_=player_id,
@@ -536,6 +542,8 @@ class BlackjackServer(object):
                             ' You sent a "{}"'.format(m_type))
         except MessageBufferException:
             self.drop_client(sock, reason='here in process_messages. socket is closed')
+        except KeyError:
+            self.drop_client(sock, reason='sock was closed, but not removed from list')
 
         
     def handle_ante(self, sock, amount):
@@ -587,15 +595,19 @@ class BlackjackServer(object):
         self.insu = {}
         self.results = defaultdict(lambda : 0)
         self.split_store = False
-        for player in self.occupied_seats:
+        players = self.occupied_seats.keys()
+        for player in players:
             if self.accounts[self.clients[player].id_] < self.MIN_BET:
                 #this player can't afford to play, but they could still watch
                 self.remove_from_game(player)
 
         while len(self.occupied_seats) < self.MAX_PLAYERS and len(self.lobby) > 0:
             new_player = self.lobby.popleft()
-            if self.accounts[self.clients[new_player].id_] < self.MIN_BET:
+            if new_player in self.clients and self.accounts[self.clients[new_player].id_] < self.MIN_BET:
                 #This player can't afford to play, but they could still watch.
+                continue
+            elif new_player not in self.clients:
+                #this player has disconnected
                 continue
             seat_num = self.empty_seat()
             self.occupied_seats[new_player] = seat_num
@@ -611,7 +623,7 @@ class BlackjackServer(object):
             msg = '[errr|{strike}|{reason}]'.format(
                 strike=self.clients[sock].strikes,
                 reason=reason.translate(escape_chars))
-            self.logger.debug('sending {} (fatal error)'.format(msg))
+            self.logger.debug('sending {} regarding {}'.format(msg, self.clients[sock].id_))
             sock.sendall(msg)
             if self.clients[sock].strikes >= self.MAX_STRIKES:
                 self.drop_client(sock, reason='too many strikes')
@@ -655,10 +667,5 @@ if __name__ == '__main__':
             dest='max_tcp')
 
     args = vars(parser.parse_args())
-    while True:
-        try:
-            b= BlackjackServer(**args)
-            b.serve()
-        except:
-            b.logger.fatal(traceback.format_exc())
+    BlackjackServer(**args).serve()
         

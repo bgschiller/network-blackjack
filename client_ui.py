@@ -104,6 +104,9 @@ class ConsoleUI(object):
         if bust == 'busty':
             print(colors.FAIL + '(they busted)' + colors.ENDC)
 
+    def display_exit(self,player_name):
+        print (colors.FAIL + player_name + 'exited' +colors.ENDC)
+
     def end_game(self, player_info):
         print('end of game')
         print(player_info)

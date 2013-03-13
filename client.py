@@ -35,6 +35,7 @@ class BlackjackClient(object):
         self.m_handlers['turn'] = self.handle_turn
         self.m_handlers['stat'] = self.handle_stat
         self.m_handlers['endg'] = self.handle_endg
+        self.m_handlers['exit'] = self.handle_exit
         self.all_messages = self.m_handlers.keys()
         self.server = s.socket(s.AF_INET, s.SOCK_STREAM)
         
@@ -78,16 +79,17 @@ class BlackjackClient(object):
         self.logger.debug('sending out {}'.format(msg))
         self.server.sendall(msg)
 
-    def process_messages(self, expected_types):
+    def process_messages(self, expected_types, ignored_types=[]):
         self.s_buffer.update()
         while self.s_buffer.messages:
             m_type, mess_args = self.s_buffer.messages.popleft()
             if m_type in expected_types: 
                 self.m_handlers[m_type](*mess_args)
+            elif m_type in ignored_types:
+                self.logger.debug('ignoring message: {} with args {}'.format(m_type, mess_args))
             else:
                 self.logger.error('Unexpected message: {} with args {}'.format(m_type, mess_args))
                 self.exit(ret_code=127)
-
 
     def exit(self,signum=None, frame=None, ret_code=0):
         self.send('[exit]')
@@ -98,13 +100,19 @@ class BlackjackClient(object):
     def handle_join(self, id, timeout,cash, seat_number):
         self.timeout = timeout
         self.cash = cash
-        self.location = 'lobby' if seat_number==0 else 'table'
+        self.location = 'lobby' if seat_number=='0' else 'table'
         self.ui.new_join(id, timeout, cash, seat_number)
 
     def handle_ante(self, min_bet):
         self.game_in_progress = True
         ante = self.ui.get_ante(min_bet)
         self.send('[ante|{:0>10}]'.format(ante))
+
+    def handle_exit(self, player_name):
+        if self.players and player_name in self.players:
+            del self.players[player_name]
+        self.seat_to_name.remove(player_name)
+        self.ui.display_exit(player_name)
 
     def handle_deal(self, dealer_card, shuf, *player_info):
         self.players = {}
@@ -162,7 +170,6 @@ class BlackjackClient(object):
                 self.logger.debug('type of self.cash is {}'.format(type(self.players[id].cash)))
                 #test how well we've been keeping track of 
                 if self.players[id].cash != cash:
-                    self.logger.warn('discrepancy in cash amounts! Server has {}. Client has {}...'.format(cash, self.players[id].cash))
                     self.players[id].cash = cash
 
             else:
@@ -229,7 +236,8 @@ class BlackjackClient(object):
             input_socks, _,_ = select(self.watched_socks, [], [])
             for stream in input_socks:
                 if stream == self.server:
-                    self.process_messages(self.all_messages)
+                    self.process_messages(ignored_types=self.all_messages,
+                            expected_types=['chat','exit','join'])
                 else:
                     self.ui.send_chat()
 
