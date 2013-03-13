@@ -132,8 +132,8 @@ class BlackjackServer(object):
             if sock == [client for client in self.clients if self.client[client].id_==id_][0]:
                 return self.scold(sock, "You've already joined!")
             return self.scold(sock, "ID {} is already in use.".format(id_))
-        if id_[:6] == 'SERVER':
-            return self.scold(sock, '"SERVER" is a reserved name and cannot be used.')
+        if id_ == 'SERVER      ':
+            return self.scold(sock, '"SERVER      " is a reserved name and cannot be used.')
         if not (all(c in (string.ascii_letters + string.digits + ' ') for c in id_) and
                 id_[0] in string.ascii_letters):
             self.logger.debug('invalid name : "{}"'.format(id_))
